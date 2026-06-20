@@ -112,6 +112,11 @@
       <version>${clickhouse-jdbc.version}</version>
       <classifier>all</classifier>
     </dependency>
+    <dependency>
+      <groupId>org.duckdb</groupId>
+      <artifactId>duckdb_jdbc</artifactId>
+      <version>${duckdb-jdbc.version}</version>
+    </dependency>
 
     <!-- Test -->
 
