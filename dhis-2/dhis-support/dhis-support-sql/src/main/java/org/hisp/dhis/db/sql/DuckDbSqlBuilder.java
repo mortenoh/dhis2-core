@@ -127,4 +127,18 @@ public class DuckDbSqlBuilder extends PostgreSqlBuilder {
   public String regexpMatch(String value, String pattern) {
     return String.format("regexp_matches(%s, %s)", value, pattern);
   }
+
+  /**
+   * DuckDB has no {@code ->>} text operator with a bare key nor the {@code #>>} jsonb path; it uses
+   * {@code json_extract_string(json, '$.path')} (returns VARCHAR, parsing VARCHAR input as JSON).
+   */
+  @Override
+  public String jsonExtract(String json, String property) {
+    return String.format("json_extract_string(%s, '$.%s')", json, property);
+  }
+
+  @Override
+  public String jsonExtract(String json, String key, String property) {
+    return String.format("json_extract_string(%s, '$.%s.%s')", json, key, property);
+  }
 }

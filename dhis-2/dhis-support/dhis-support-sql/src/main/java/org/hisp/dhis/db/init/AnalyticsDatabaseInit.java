@@ -134,7 +134,43 @@ public class AnalyticsDatabaseInit {
             host, port, database, username, password);
     jdbcTemplate.execute(String.format("attach '%s' as pg (type postgres, read_only);", dsn));
 
+    // DuckDB runs in-process: by default it sizes its memory limit to ~80% of host RAM,
+    // which collides with the JVM heap and OOMs when several large (event) tables build
+    // concurrently. Bound it to a share of (physical RAM - JVM max heap) and enable disk
+    // spilling so builds complete under memory pressure.
+    setDuckDbMemoryLimit();
+    // Analytics fact tables are unordered, so don't buffer whole result sets to preserve
+    // insertion order; this lets large inserts stream and spill instead of OOMing.
+    jdbcTemplate.execute("set preserve_insertion_order = false;");
+    String analyticsUrl = settings.getAnalyticsConnectionUrl();
+    String prefix = "jdbc:duckdb:";
+    if (analyticsUrl != null && analyticsUrl.startsWith(prefix)) {
+      String file = analyticsUrl.substring(prefix.length());
+      if (!file.isBlank() && !file.startsWith(":")) { // skip in-memory (:memory:)
+        jdbcTemplate.execute(String.format("set temp_directory = '%s.tmp';", file));
+      }
+    }
+
     log.info("DuckDB attached source PostgreSQL database '{}' at {}:{}", database, host, port);
+  }
+
+  /**
+   * Caps the embedded DuckDB memory limit so it coexists with the JVM heap. Uses 60% of (physical
+   * RAM - JVM max heap), floored at 512 MB. Leaves the DuckDB default in place if RAM can't be
+   * determined.
+   */
+  private void setDuckDbMemoryLimit() {
+    try {
+      com.sun.management.OperatingSystemMXBean os =
+          (com.sun.management.OperatingSystemMXBean)
+              java.lang.management.ManagementFactory.getOperatingSystemMXBean();
+      long available = os.getTotalMemorySize() - Runtime.getRuntime().maxMemory();
+      long limitMb = Math.max((long) (available * 0.75) / (1024 * 1024), 512);
+      jdbcTemplate.execute(String.format("set memory_limit = '%dMB';", limitMb));
+      log.info("DuckDB memory limit set to {} MB", limitMb);
+    } catch (Exception ex) {
+      log.warn("Could not determine host memory; leaving DuckDB memory limit at default", ex);
+    }
   }
 
   /**
