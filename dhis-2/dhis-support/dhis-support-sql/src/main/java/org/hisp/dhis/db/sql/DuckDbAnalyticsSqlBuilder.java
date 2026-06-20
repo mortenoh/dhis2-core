@@ -114,21 +114,46 @@ public class DuckDbAnalyticsSqlBuilder extends PostgreSqlAnalyticsSqlBuilder {
     return String.format("regexp_matches(%s, %s)", value, pattern);
   }
 
+  /** DuckDB JSON extraction: {@code json_extract_string(json, '$.path')} instead of ->> / #>>. */
+  @Override
+  public String jsonExtract(String json, String property) {
+    return String.format("json_extract_string(%s, '$.%s')", json, property);
+  }
+
+  @Override
+  public String jsonExtract(String json, String key, String property) {
+    return String.format("json_extract_string(%s, '$.%s.%s')", json, key, property);
+  }
+
   /**
-   * The one genuinely bespoke analytics method. Postgres builds the event-datavalue blob with
-   * {@code json_object_agg} / {@code jsonb_object_keys} / {@code ->>}; DuckDB's JSON functions
-   * differ ({@code json_group_object}, {@code json_extract_string}). Rewrite this with DuckDB JSON,
-   * or run the sub-read on the attached Postgres side via {@code postgres_query(pg, '...')}.
-   *
-   * <p>TODO: implement the DuckDB JSON rewrite. Aggregate analytics generation works without it;
-   * event/tracker analytics will fail here until implemented.
-   *
-   * <p>{@code renderTimestamp}, {@code renderDateFieldPeriodBucketDate} (all period buckets),
-   * {@code castAsDate}, {@code nullIfEmpty}, {@code useJoinForDatePeriodStructureLookup()} are
-   * inherited from {@link PostgreSqlAnalyticsSqlBuilder} unchanged.
+   * DuckDB rewrite of the Postgres event-datavalue blob. Postgres uses {@code json_object_agg} /
+   * {@code jsonb_object_keys} / {@code -> ->>}; the DuckDB equivalents are {@code
+   * json_group_object} / {@code unnest(json_keys(...))} / {@code json_extract_string(json,
+   * '$.key.prop')}. Source tables are qualified to the attached {@code pg} database; the shape
+   * matches the Postgres column so downstream queries are unaffected.
    */
   @Override
   public String getEventDataValues() {
-    return notSupported();
+    return """
+        (select json_group_object(l2.keys, l2.datavalue) as value
+        from (
+            select l1.uid,
+            l1.keys,
+            json_object(
+            'value', json_extract_string(l1.eventdatavalues, '$.' || l1.keys || '.value'),
+            'created', json_extract_string(l1.eventdatavalues, '$.' || l1.keys || '.created'),
+            'lastUpdated', json_extract_string(l1.eventdatavalues, '$.' || l1.keys || '.lastUpdated'),
+            'providedElsewhere', json_extract(l1.eventdatavalues, '$.' || l1.keys || '.providedElsewhere'),
+            'value_name', (select ou.name
+                from %1$s ou
+                where ou.uid = json_extract_string(l1.eventdatavalues, '$.' || l1.keys || '.value')),
+            'value_code', (select ou.code
+                from %1$s ou
+                where ou.uid = json_extract_string(l1.eventdatavalues, '$.' || l1.keys || '.value'))) as datavalue
+            from (select inner_evt.*, unnest(json_keys(inner_evt.eventdatavalues)) keys
+            from %2$s inner_evt) as l1) as l2
+        where l2.uid = ev.uid
+        group by l2.uid)::JSON"""
+        .formatted(qualifyTable("organisationunit"), qualifyTable("trackerevent"));
   }
 }
