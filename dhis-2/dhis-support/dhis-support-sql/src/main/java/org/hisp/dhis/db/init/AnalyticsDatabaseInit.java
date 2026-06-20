@@ -88,6 +88,7 @@ public class AnalyticsDatabaseInit {
       case POSTGRESQL -> initPostgreSql();
       case DORIS -> initDoris();
       case CLICKHOUSE -> initClickHouse();
+      case DUCKDB -> initDuckDb();
     }
 
     String url = settings.getAnalyticsConnectionUrl();
@@ -108,6 +109,32 @@ public class AnalyticsDatabaseInit {
   /** Work for initializing a ClickHouse analytics database. */
   private void initClickHouse() {
     createClickHouseNamedCollection();
+  }
+
+  /**
+   * Work for initializing a DuckDB analytics database. Loads the {@code postgres} extension and
+   * attaches the source DHIS2 PostgreSQL database read-only as {@code pg}, so analytics generation
+   * can read the source tables (qualified as {@code pg.public.<table>}).
+   */
+  private void initDuckDb() {
+    String jdbcUrl = config.getConnectionUrl();
+    String host = JdbcUtils.getHostFromUrl(jdbcUrl);
+    int port = JdbcUtils.getPortFromUrl(jdbcUrl, JdbcUtils.POSTGRESQL_PORT);
+    String database = JdbcUtils.getDatabaseFromUrl(jdbcUrl);
+    String username = config.getProperty(ConfigurationKey.CONNECTION_USERNAME);
+    String password = config.getProperty(ConfigurationKey.CONNECTION_PASSWORD);
+
+    jdbcTemplate.execute("install postgres;");
+    jdbcTemplate.execute("load postgres;");
+    jdbcTemplate.execute("detach database if exists pg;");
+
+    String dsn =
+        String.format(
+            "host=%s port=%d dbname=%s user=%s password=%s",
+            host, port, database, username, password);
+    jdbcTemplate.execute(String.format("attach '%s' as pg (type postgres, read_only);", dsn));
+
+    log.info("DuckDB attached source PostgreSQL database '{}' at {}:{}", database, host, port);
   }
 
   /**

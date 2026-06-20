@@ -249,6 +249,7 @@ public class AnalyticsDataSourceConfig {
       case POSTGRESQL -> org.postgresql.Driver.class.getName();
       case DORIS -> com.mysql.cj.jdbc.Driver.class.getName();
       case CLICKHOUSE -> com.clickhouse.jdbc.ClickHouseDriver.class.getName();
+      case DUCKDB -> org.duckdb.DuckDBDriver.class.getName();
     };
   }
 }
