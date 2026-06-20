@@ -108,6 +108,12 @@ public class DuckDbAnalyticsSqlBuilder extends PostgreSqlAnalyticsSqlBuilder {
     return String.format("%s.public.%s", SOURCE_ALIAS, quote(name));
   }
 
+  /** DuckDB uses regexp_matches(...) rather than the Postgres {@code ~} / {@code ~*} operators. */
+  @Override
+  public String regexpMatch(String value, String pattern) {
+    return String.format("regexp_matches(%s, %s)", value, pattern);
+  }
+
   /**
    * The one genuinely bespoke analytics method. Postgres builds the event-datavalue blob with
    * {@code json_object_agg} / {@code jsonb_object_keys} / {@code ->>}; DuckDB's JSON functions
