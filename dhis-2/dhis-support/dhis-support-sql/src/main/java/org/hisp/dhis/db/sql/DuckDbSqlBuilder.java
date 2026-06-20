@@ -118,4 +118,13 @@ public class DuckDbSqlBuilder extends PostgreSqlBuilder {
   public String createIndex(Index index) {
     return notSupported();
   }
+
+  /**
+   * DuckDB has no {@code ~} / {@code ~*} regex operators; it uses the {@code regexp_matches}
+   * function (returns boolean). Pattern matching is case-sensitive like Postgres {@code ~}.
+   */
+  @Override
+  public String regexpMatch(String value, String pattern) {
+    return String.format("regexp_matches(%s, %s)", value, pattern);
+  }
 }
