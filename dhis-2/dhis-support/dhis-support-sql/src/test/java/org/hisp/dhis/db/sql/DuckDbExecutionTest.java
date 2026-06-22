@@ -66,6 +66,34 @@ class DuckDbExecutionTest {
   }
 
   /**
+   * The partial-update path ({@code removeUpdatedData}) deletes from a generated analytics table.
+   * {@code qualifyTable} must resolve an owned {@code analytics*} table to the LOCAL DuckDB table —
+   * not the attached read-only {@code pg} — so the delete actually executes. Reproduce that delete
+   * shape in-process and assert source tables still resolve to {@code pg}.
+   */
+  @Test
+  void testOwnedAnalyticsTableDeleteExecutesLocally() throws Exception {
+    try (Connection connection = DriverManager.getConnection("jdbc:duckdb::memory:");
+        Statement statement = connection.createStatement()) {
+      String owned = sqlBuilder.qualifyTable("analytics_event_2020");
+      assertEquals("\"analytics_event_2020\"", owned);
+
+      statement.execute("create table " + owned + " (event varchar, lastupdated date)");
+      statement.execute(
+          "insert into " + owned + " values ('e1', '2020-01-01'), ('e2', '2020-02-01')");
+      statement.execute("delete from " + owned + " ax where ax.event = 'e1'");
+
+      try (ResultSet rs = statement.executeQuery("select count(*) as c from " + owned)) {
+        assertTrue(rs.next());
+        assertEquals(1, rs.getInt("c"));
+      }
+
+      // Source tables remain qualified to the attached pg database (not local).
+      assertTrue(sqlBuilder.qualifyTable("datavalue").startsWith("pg."));
+    }
+  }
+
+  /**
    * Runs the builder-generated jsonExtract and regexpMatch expressions against {@code connection}.
    */
   private void assertGeneratedSqlExecutes(Connection connection) throws Exception {
