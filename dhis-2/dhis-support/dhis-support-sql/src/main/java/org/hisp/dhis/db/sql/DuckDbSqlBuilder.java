@@ -164,4 +164,63 @@ public class DuckDbSqlBuilder extends PostgreSqlBuilder {
   public String jsonExtract(String json, String key, String property) {
     return String.format("json_extract_string(%s, '$.%s.%s')", json, key, property);
   }
+
+  /**
+   * Builds the DuckDB session-initialization SQL that must run on <b>every</b> physical connection
+   * (wired as Hikari {@code connectionInitSql}). DuckDB's ATTACH and {@code memory_limit} / {@code
+   * temp_directory} / {@code preserve_insertion_order} settings are connection/instance session
+   * state — not persisted to the {@code .duckdb} file — so a connection that did not run them fails
+   * queries against {@code pg.public."..."} with "schema pg does not exist". All statements are
+   * idempotent: {@code install}/{@code load} are no-ops when already done, {@code attach} uses
+   * {@code if not exists} (so it is safe when a shared in-process instance already has {@code pg}),
+   * and the {@code set} statements are global.
+   *
+   * @param host source PostgreSQL host.
+   * @param port source PostgreSQL port.
+   * @param database source PostgreSQL database name.
+   * @param username source PostgreSQL user.
+   * @param password source PostgreSQL password.
+   * @param memoryLimitMb DuckDB memory limit in MB, or null to leave the engine default.
+   * @param tempDirectory DuckDB spill directory, or null/blank for none (e.g. in-memory).
+   * @return a single {@code ;}-delimited SQL string (DuckDB executes multiple statements per call).
+   */
+  public static String connectionInitSql(
+      String host,
+      int port,
+      String database,
+      String username,
+      String password,
+      Long memoryLimitMb,
+      String tempDirectory) {
+    // libpq connection string with each value single-quoted and backslash-escaped, then embedded
+    // in a DuckDB SQL string literal where single quotes are escaped by doubling.
+    String dsn =
+        String.format(
+            "host=%s port=%d dbname=%s user=%s password=%s",
+            host, port, pgConnValue(database), pgConnValue(username), pgConnValue(password));
+
+    StringBuilder sql = new StringBuilder("install postgres; load postgres; ");
+    sql.append(
+        String.format(
+            "attach if not exists '%s' as pg (type postgres, read_only); ",
+            dsn.replace("'", "''")));
+    sql.append("set preserve_insertion_order = false; ");
+    if (memoryLimitMb != null) {
+      sql.append(String.format("set memory_limit = '%dMB'; ", memoryLimitMb));
+    }
+    if (tempDirectory != null && !tempDirectory.isBlank()) {
+      sql.append(String.format("set temp_directory = '%s'; ", tempDirectory.replace("'", "''")));
+    }
+    return sql.toString().trim();
+  }
+
+  /**
+   * Encodes a value as a single-quoted libpq connection-string value, backslash-escaping embedded
+   * backslashes and single quotes, so passwords or database names with spaces or quotes do not
+   * break the attach DSN.
+   */
+  private static String pgConnValue(String value) {
+    String escaped = value.replace("\\", "\\\\").replace("'", "\\'");
+    return "'" + escaped + "'";
+  }
 }

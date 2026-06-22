@@ -48,6 +48,8 @@ import org.hisp.dhis.datasource.ReadOnlyDataSourceManager;
 import org.hisp.dhis.datasource.model.DbPoolConfig;
 import org.hisp.dhis.db.model.Database;
 import org.hisp.dhis.db.setting.SqlBuilderSettings;
+import org.hisp.dhis.db.sql.DuckDbSqlBuilder;
+import org.hisp.dhis.db.util.JdbcUtils;
 import org.hisp.dhis.external.conf.ConfigurationKey;
 import org.hisp.dhis.external.conf.DhisConfigurationProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -165,21 +167,28 @@ public class AnalyticsDataSourceConfig {
    * @return a {@link DataSource}.
    */
   private DataSource getAnalyticsDataSource() {
+    final Database database = sqlBuilderSettings.getAnalyticsDatabase();
     final String jdbcUrl =
-        withClickHouseConnectionSettings(
-            sqlBuilderSettings.getAnalyticsDatabase(),
-            config.getProperty(ANALYTICS_CONNECTION_URL));
+        withClickHouseConnectionSettings(database, config.getProperty(ANALYTICS_CONNECTION_URL));
     final String driverClassName = getDriverClassName();
     final String dbPoolType = config.getProperty(ConfigurationKey.DB_POOL_TYPE);
 
-    DbPoolConfig poolConfig =
+    DbPoolConfig.DbPoolConfigBuilder poolConfigBuilder =
         DbPoolConfig.builder("analytics")
             .driverClassName(driverClassName)
             .jdbcUrl(jdbcUrl)
             .dhisConfig(config)
             .mapper(ANALYTICS)
-            .dbPoolType(dbPoolType)
-            .build();
+            .dbPoolType(dbPoolType);
+
+    // Embedded DuckDB: ATTACH + session settings are per-connection/instance state, so they must
+    // run on every physical pool connection (not once at startup), or queries against the attached
+    // source ('pg') fail on connections that never ran the init.
+    if (database == Database.DUCKDB) {
+      poolConfigBuilder.connectionInitSql(buildDuckDbConnectionInitSql());
+    }
+
+    DbPoolConfig poolConfig = poolConfigBuilder.build();
 
     try {
       return DatabasePoolUtils.createDbPool(poolConfig, meterRegistry);
@@ -251,5 +260,53 @@ public class AnalyticsDataSourceConfig {
       case CLICKHOUSE -> com.clickhouse.jdbc.ClickHouseDriver.class.getName();
       case DUCKDB -> org.duckdb.DuckDBDriver.class.getName();
     };
+  }
+
+  /**
+   * Builds the per-connection init SQL for an embedded DuckDB analytics datasource: load the {@code
+   * postgres} extension, attach the source DHIS2 PostgreSQL database read-only as {@code pg}, and
+   * apply the embedded-engine memory/spill settings. Run on every physical connection via Hikari
+   * {@code connectionInitSql} because none of this is persisted to the {@code .duckdb} file.
+   */
+  private String buildDuckDbConnectionInitSql() {
+    String pgUrl = config.getProperty(ConfigurationKey.CONNECTION_URL);
+    String host = JdbcUtils.getHostFromUrl(pgUrl);
+    int port = JdbcUtils.getPortFromUrl(pgUrl, JdbcUtils.POSTGRESQL_PORT);
+    String database = JdbcUtils.getDatabaseFromUrl(pgUrl);
+    String username = config.getProperty(ConfigurationKey.CONNECTION_USERNAME);
+    String password = config.getProperty(ConfigurationKey.CONNECTION_PASSWORD);
+
+    return DuckDbSqlBuilder.connectionInitSql(
+        host, port, database, username, password, duckDbMemoryLimitMb(), duckDbTempDirectory());
+  }
+
+  /**
+   * Caps the embedded DuckDB memory limit so it coexists with the JVM heap: 75% of (physical RAM -
+   * JVM max heap), floored at 512 MB. Returns null (engine default) if host memory can't be read.
+   */
+  private Long duckDbMemoryLimitMb() {
+    try {
+      com.sun.management.OperatingSystemMXBean os =
+          (com.sun.management.OperatingSystemMXBean)
+              java.lang.management.ManagementFactory.getOperatingSystemMXBean();
+      long available = os.getTotalMemorySize() - Runtime.getRuntime().maxMemory();
+      return Math.max((long) (available * 0.75) / (1024 * 1024), 512);
+    } catch (Exception ex) {
+      log.warn("Could not determine host memory; leaving DuckDB memory limit at default", ex);
+      return null;
+    }
+  }
+
+  /** Derives a disk spill directory from a file-backed DuckDB URL; null for in-memory. */
+  private String duckDbTempDirectory() {
+    String analyticsUrl = config.getProperty(ANALYTICS_CONNECTION_URL);
+    String prefix = "jdbc:duckdb:";
+    if (analyticsUrl != null && analyticsUrl.startsWith(prefix)) {
+      String file = analyticsUrl.substring(prefix.length());
+      if (!file.isBlank() && !file.startsWith(":")) { // skip in-memory (:memory:)
+        return file + ".tmp";
+      }
+    }
+    return null;
   }
 }
