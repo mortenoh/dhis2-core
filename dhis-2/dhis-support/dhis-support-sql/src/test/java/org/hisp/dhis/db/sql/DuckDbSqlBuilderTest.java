@@ -34,7 +34,13 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
+import org.hisp.dhis.db.model.Column;
+import org.hisp.dhis.db.model.DataType;
 import org.hisp.dhis.db.model.Database;
+import org.hisp.dhis.db.model.Logged;
+import org.hisp.dhis.db.model.Table;
+import org.hisp.dhis.db.model.constraint.Nullable;
 import org.junit.jupiter.api.Test;
 
 /** Unit tests for {@link DuckDbSqlBuilder}, covering the DuckDB-divergent overrides. */
@@ -54,6 +60,36 @@ class DuckDbSqlBuilderTest {
   @Test
   void testQualifyTableReferencesAttachedPostgres() {
     assertEquals("pg.public.\"dataelement\"", sqlBuilder.qualifyTable("dataelement"));
+  }
+
+  @Test
+  void testQualifyTableKeepsOwnedAnalyticsTablesLocal() {
+    // Generated analytics/resource tables live in DuckDB, not the read-only attached pg.
+    assertEquals("\"analytics\"", sqlBuilder.qualifyTable("analytics"));
+    assertEquals("\"analytics_event_2020\"", sqlBuilder.qualifyTable("analytics_event_2020"));
+    assertEquals(
+        "\"analytics_rs_orgunitstructure\"",
+        sqlBuilder.qualifyTable("analytics_rs_orgunitstructure"));
+  }
+
+  @Test
+  void testDoesNotSupportUnloggedTables() {
+    assertFalse(sqlBuilder.supportsUnloggedTables());
+  }
+
+  @Test
+  void testCreateTableOmitsUnloggedModifier() {
+    // Analytics tables are unlogged by default; DuckDB has no logged/unlogged distinction, so the
+    // inherited PostgreSQL DDL must drop the modifier rather than depend on DuckDB tolerating it.
+    Table table =
+        new Table(
+            "analytics_event_2020",
+            List.of(new Column("id", DataType.INTEGER, Nullable.NOT_NULL)),
+            List.of("id"),
+            Logged.UNLOGGED);
+    String sql = sqlBuilder.createTable(table);
+    assertFalse(sql.contains("unlogged"), sql);
+    assertTrue(sql.startsWith("create table "), sql);
   }
 
   @Test

@@ -192,6 +192,15 @@ public interface SqlBuilder {
   boolean supportsVacuum();
 
   /**
+   * @return true if the DBMS supports {@code unlogged} tables (a PostgreSQL crash-unsafe table
+   *     optimization). Backends without the concept return false so {@code createTable} omits the
+   *     modifier rather than relying on the engine tolerating it.
+   */
+  default boolean supportsUnloggedTables() {
+    return true;
+  }
+
+  /**
    * @return true if the DBMS supports correlated subqueries.
    */
   boolean supportsCorrelatedSubquery();

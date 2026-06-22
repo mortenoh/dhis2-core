@@ -68,6 +68,12 @@ public class DuckDbAnalyticsSqlBuilder extends PostgreSqlAnalyticsSqlBuilder {
     return false;
   }
 
+  /** DuckDB has no logged/unlogged distinction; emit plain {@code create table}. */
+  @Override
+  public boolean supportsUnloggedTables() {
+    return false;
+  }
+
   @Override
   public boolean requiresIndexesForAnalytics() {
     return false;
@@ -103,8 +109,16 @@ public class DuckDbAnalyticsSqlBuilder extends PostgreSqlAnalyticsSqlBuilder {
     return notSupported();
   }
 
+  /**
+   * Generated analytics and resource tables (all prefixed {@code analytics}) are owned by the local
+   * DuckDB database; only DHIS2 source tables are read from the attached, read-only PostgreSQL
+   * database {@code pg}. See {@link DuckDbSqlBuilder#qualifyTable(String)}.
+   */
   @Override
   public String qualifyTable(String name) {
+    if (name.startsWith("analytics")) {
+      return quote(name);
+    }
     return String.format("%s.public.%s", SOURCE_ALIAS, quote(name));
   }
 
