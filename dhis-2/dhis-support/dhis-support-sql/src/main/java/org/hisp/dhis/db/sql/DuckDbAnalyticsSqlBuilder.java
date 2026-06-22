@@ -41,6 +41,9 @@ import org.hisp.dhis.db.model.Index;
  * accepts that SQL. The handful of DuckDB-divergent base methods are re-applied here (they mirror
  * {@link DuckDbSqlBuilder}; Java single inheritance makes the duplication hard to avoid without
  * refactoring the base classes).
+ *
+ * <p>See {@link DuckDbSqlBuilder} for this backend's intended use — testing/CI, local development,
+ * and small/single-node databases rather than large or clustered production analytics.
  */
 public class DuckDbAnalyticsSqlBuilder extends PostgreSqlAnalyticsSqlBuilder {
 
