@@ -40,9 +40,16 @@ import org.hisp.dhis.db.model.Index;
  * transaction database attached read-only as {@code pg} via the DuckDB {@code postgres} extension
  * (see {@code AnalyticsDatabaseInit.initDuckDb}).
  *
- * <p>SKELETON: capability flags and types are best-effort first-cut values; verify the {@link
- * #supportsDeclarativePartitioning()} / table-inheritance interaction with the analytics table
- * managers, and keep geospatial disabled for the first cut.
+ * <p>DuckDB is an embedded, in-process columnar engine (one file or {@code :memory:}, no server).
+ * This backend targets <b>simplicity, not scale</b>: testing/CI (execute analytics SQL against a
+ * real engine with no infrastructure), local development (the full alternate-backend path without a
+ * cluster), and small/single-node databases (demos, training, pilots). It is not intended for large
+ * or horizontally-scaled production analytics — a {@code .duckdb} file is single-writer (so it
+ * cannot be shared read-write across app nodes), and the embedded engine shares host RAM with the
+ * JVM. Use ClickHouse/Doris when scale or clustering is required.
+ *
+ * <p>Geospatial support is intentionally disabled for this backend ({@link
+ * #supportsGeospatialData()} returns false), matching Doris/ClickHouse.
  */
 public class DuckDbSqlBuilder extends PostgreSqlBuilder {
 
