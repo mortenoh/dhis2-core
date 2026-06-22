@@ -59,9 +59,19 @@ public class DuckDbSqlBuilder extends PostgreSqlBuilder {
     return true;
   }
 
-  /** Source tables resolve to the attached Postgres database (postgres_scanner). */
+  /**
+   * Resolves a table reference. Generated analytics and resource tables (all prefixed {@code
+   * analytics}) are owned by the local DuckDB database and must be referenced unqualified — they
+   * are created and written there. Every other name is a DHIS2 source table read from the attached,
+   * read-only PostgreSQL database {@code pg} (postgres_scanner). Qualifying an owned table to
+   * {@code pg} would target the read-only source (e.g. the partial-update delete in {@code
+   * removeUpdatedData}) and fail.
+   */
   @Override
   public String qualifyTable(String name) {
+    if (name.startsWith("analytics")) {
+      return quote(name);
+    }
     return String.format("%s.public.%s", SOURCE_ALIAS, quote(name));
   }
 
@@ -74,6 +84,12 @@ public class DuckDbSqlBuilder extends PostgreSqlBuilder {
 
   @Override
   public boolean supportsVacuum() {
+    return false;
+  }
+
+  /** DuckDB has no logged/unlogged distinction; emit plain {@code create table}. */
+  @Override
+  public boolean supportsUnloggedTables() {
     return false;
   }
 

@@ -128,11 +128,15 @@ public class AnalyticsDatabaseInit {
     jdbcTemplate.execute("load postgres;");
     jdbcTemplate.execute("detach database if exists pg;");
 
+    // Build a libpq connection string with each value single-quoted and backslash-escaped, so
+    // passwords/database names containing spaces or quotes are handled. The whole DSN is then
+    // embedded in a DuckDB SQL string literal, where single quotes are escaped by doubling.
     String dsn =
         String.format(
             "host=%s port=%d dbname=%s user=%s password=%s",
-            host, port, database, username, password);
-    jdbcTemplate.execute(String.format("attach '%s' as pg (type postgres, read_only);", dsn));
+            host, port, pgConnValue(database), pgConnValue(username), pgConnValue(password));
+    jdbcTemplate.execute(
+        String.format("attach '%s' as pg (type postgres, read_only);", dsn.replace("'", "''")));
 
     // DuckDB runs in-process: by default it sizes its memory limit to ~80% of host RAM,
     // which collides with the JVM heap and OOMs when several large (event) tables build
@@ -147,11 +151,22 @@ public class AnalyticsDatabaseInit {
     if (analyticsUrl != null && analyticsUrl.startsWith(prefix)) {
       String file = analyticsUrl.substring(prefix.length());
       if (!file.isBlank() && !file.startsWith(":")) { // skip in-memory (:memory:)
-        jdbcTemplate.execute(String.format("set temp_directory = '%s.tmp';", file));
+        String tempDir = (file + ".tmp").replace("'", "''");
+        jdbcTemplate.execute(String.format("set temp_directory = '%s';", tempDir));
       }
     }
 
     log.info("DuckDB attached source PostgreSQL database '{}' at {}:{}", database, host, port);
+  }
+
+  /**
+   * Encodes a value as a single-quoted libpq connection-string value, backslash-escaping embedded
+   * backslashes and single quotes. This protects against passwords or database names containing
+   * spaces or quotes breaking the attach DSN.
+   */
+  private static String pgConnValue(String value) {
+    String escaped = value.replace("\\", "\\\\").replace("'", "\\'");
+    return "'" + escaped + "'";
   }
 
   /**
