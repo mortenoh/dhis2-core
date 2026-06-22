@@ -133,4 +133,36 @@ class DuckDbSqlBuilderTest {
   void testCreateIndexNotSupported() {
     assertThrows(UnsupportedOperationException.class, () -> sqlBuilder.createIndex(null));
   }
+
+  @Test
+  void testConnectionInitSqlIsIdempotentAndComplete() {
+    String sql =
+        DuckDbSqlBuilder.connectionInitSql(
+            "db", 5432, "dhis", "dhis", "secret", 1024L, "/data/a.duckdb.tmp");
+    assertTrue(sql.contains("install postgres"), sql);
+    assertTrue(sql.contains("load postgres"), sql);
+    // ATTACH must be IF NOT EXISTS so it is safe on a shared in-process instance.
+    assertTrue(sql.contains("attach if not exists"), sql);
+    assertTrue(sql.contains("as pg (type postgres, read_only)"), sql);
+    assertTrue(sql.contains("set preserve_insertion_order = false"), sql);
+    assertTrue(sql.contains("set memory_limit = '1024MB'"), sql);
+    assertTrue(sql.contains("set temp_directory = '/data/a.duckdb.tmp'"), sql);
+  }
+
+  @Test
+  void testConnectionInitSqlOmitsOptionalSettingsWhenNull() {
+    String sql =
+        DuckDbSqlBuilder.connectionInitSql("db", 5432, "dhis", "dhis", "secret", null, null);
+    assertTrue(sql.contains("attach if not exists"), sql);
+    assertFalse(sql.contains("memory_limit"), sql);
+    assertFalse(sql.contains("temp_directory"), sql);
+  }
+
+  @Test
+  void testConnectionInitSqlEscapesQuoteInPassword() {
+    // A lone single quote in the password must not appear unescaped — it would break out of the
+    // attach string literal. libpq backslash-escaping + SQL quote-doubling prevents that.
+    String sql = DuckDbSqlBuilder.connectionInitSql("db", 5432, "dhis", "dhis", "p'wd", null, null);
+    assertFalse(sql.contains("password=p'wd"), sql);
+  }
 }

@@ -88,6 +88,15 @@ public class DbPoolConfig {
 
   private String maxIdleTime;
 
+  /**
+   * SQL executed on every physical connection right after it is created (Hikari {@code
+   * connectionInitSql}). Used by embedded DuckDB, whose ATTACH and session settings are
+   * per-connection/instance state rather than persisted database-file state, so each pooled
+   * connection must (idempotently) re-establish them. Null for backends that need no per-connection
+   * setup.
+   */
+  private String connectionInitSql;
+
   private ConfigKeyMapper mapper;
 
   public ConfigKeyMapper getMapper() {

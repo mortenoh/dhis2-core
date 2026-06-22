@@ -272,6 +272,13 @@ public final class DatabasePoolUtils {
       hc.setConnectionTestQuery(connectionTestQuery);
     }
 
+    // Per-connection init SQL (e.g. embedded DuckDB's ATTACH + session settings, which are not
+    // persisted to the database file and so must run on every physical connection).
+    final String connectionInitSql = config.getConnectionInitSql();
+    if (connectionInitSql != null && !connectionInitSql.isBlank()) {
+      hc.setConnectionInitSql(connectionInitSql);
+    }
+
     hc.setConnectionTimeout(connectionTimeout);
     hc.setValidationTimeout(validationTimeout);
     hc.setMaximumPoolSize(maxPoolSize);

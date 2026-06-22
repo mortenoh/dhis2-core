@@ -112,80 +112,17 @@ public class AnalyticsDatabaseInit {
   }
 
   /**
-   * Work for initializing a DuckDB analytics database. Loads the {@code postgres} extension and
-   * attaches the source DHIS2 PostgreSQL database read-only as {@code pg}, so analytics generation
-   * can read the source tables (qualified as {@code pg.public.<table>}).
+   * DuckDB needs no one-shot bootstrap here. Its session state — the {@code postgres} extension,
+   * the read-only {@code pg} ATTACH, and the {@code memory_limit} / {@code temp_directory} / {@code
+   * preserve_insertion_order} settings — is connection/instance state, not persisted to the {@code
+   * .duckdb} file. It is therefore established on <b>every</b> physical pool connection via Hikari
+   * {@code connectionInitSql} (built in {@code
+   * AnalyticsDataSourceConfig#buildDuckDbConnectionInitSql} and assembled by {@link
+   * org.hisp.dhis.db.sql.DuckDbSqlBuilder#connectionInitSql}). Running it once here would only
+   * initialize a single pooled connection, leaving others to fail with "schema pg does not exist".
    */
   private void initDuckDb() {
-    String jdbcUrl = config.getConnectionUrl();
-    String host = JdbcUtils.getHostFromUrl(jdbcUrl);
-    int port = JdbcUtils.getPortFromUrl(jdbcUrl, JdbcUtils.POSTGRESQL_PORT);
-    String database = JdbcUtils.getDatabaseFromUrl(jdbcUrl);
-    String username = config.getProperty(ConfigurationKey.CONNECTION_USERNAME);
-    String password = config.getProperty(ConfigurationKey.CONNECTION_PASSWORD);
-
-    jdbcTemplate.execute("install postgres;");
-    jdbcTemplate.execute("load postgres;");
-    jdbcTemplate.execute("detach database if exists pg;");
-
-    // Build a libpq connection string with each value single-quoted and backslash-escaped, so
-    // passwords/database names containing spaces or quotes are handled. The whole DSN is then
-    // embedded in a DuckDB SQL string literal, where single quotes are escaped by doubling.
-    String dsn =
-        String.format(
-            "host=%s port=%d dbname=%s user=%s password=%s",
-            host, port, pgConnValue(database), pgConnValue(username), pgConnValue(password));
-    jdbcTemplate.execute(
-        String.format("attach '%s' as pg (type postgres, read_only);", dsn.replace("'", "''")));
-
-    // DuckDB runs in-process: by default it sizes its memory limit to ~80% of host RAM,
-    // which collides with the JVM heap and OOMs when several large (event) tables build
-    // concurrently. Bound it to a share of (physical RAM - JVM max heap) and enable disk
-    // spilling so builds complete under memory pressure.
-    setDuckDbMemoryLimit();
-    // Analytics fact tables are unordered, so don't buffer whole result sets to preserve
-    // insertion order; this lets large inserts stream and spill instead of OOMing.
-    jdbcTemplate.execute("set preserve_insertion_order = false;");
-    String analyticsUrl = settings.getAnalyticsConnectionUrl();
-    String prefix = "jdbc:duckdb:";
-    if (analyticsUrl != null && analyticsUrl.startsWith(prefix)) {
-      String file = analyticsUrl.substring(prefix.length());
-      if (!file.isBlank() && !file.startsWith(":")) { // skip in-memory (:memory:)
-        String tempDir = (file + ".tmp").replace("'", "''");
-        jdbcTemplate.execute(String.format("set temp_directory = '%s';", tempDir));
-      }
-    }
-
-    log.info("DuckDB attached source PostgreSQL database '{}' at {}:{}", database, host, port);
-  }
-
-  /**
-   * Encodes a value as a single-quoted libpq connection-string value, backslash-escaping embedded
-   * backslashes and single quotes. This protects against passwords or database names containing
-   * spaces or quotes breaking the attach DSN.
-   */
-  private static String pgConnValue(String value) {
-    String escaped = value.replace("\\", "\\\\").replace("'", "\\'");
-    return "'" + escaped + "'";
-  }
-
-  /**
-   * Caps the embedded DuckDB memory limit so it coexists with the JVM heap. Uses 60% of (physical
-   * RAM - JVM max heap), floored at 512 MB. Leaves the DuckDB default in place if RAM can't be
-   * determined.
-   */
-  private void setDuckDbMemoryLimit() {
-    try {
-      com.sun.management.OperatingSystemMXBean os =
-          (com.sun.management.OperatingSystemMXBean)
-              java.lang.management.ManagementFactory.getOperatingSystemMXBean();
-      long available = os.getTotalMemorySize() - Runtime.getRuntime().maxMemory();
-      long limitMb = Math.max((long) (available * 0.75) / (1024 * 1024), 512);
-      jdbcTemplate.execute(String.format("set memory_limit = '%dMB';", limitMb));
-      log.info("DuckDB memory limit set to {} MB", limitMb);
-    } catch (Exception ex) {
-      log.warn("Could not determine host memory; leaving DuckDB memory limit at default", ex);
-    }
+    // Intentionally empty — see method javadoc.
   }
 
   /**
