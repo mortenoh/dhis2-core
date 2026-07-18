@@ -34,6 +34,7 @@ import org.hisp.dhis.db.model.Database;
 import org.hisp.dhis.db.setting.SqlBuilderSettings;
 import org.hisp.dhis.db.sql.ClickHouseSqlBuilder;
 import org.hisp.dhis.db.sql.DorisSqlBuilder;
+import org.hisp.dhis.db.sql.DuckDbSqlBuilder;
 import org.hisp.dhis.db.sql.PostgreSqlBuilder;
 import org.hisp.dhis.db.sql.SqlBuilder;
 import org.hisp.dhis.external.conf.DhisConfigurationProvider;
@@ -79,6 +80,7 @@ public class SqlBuilderProvider {
     return switch (database) {
       case DORIS -> new DorisSqlBuilder(catalog, driverFilename);
       case CLICKHOUSE -> new ClickHouseSqlBuilder(databaseName);
+      case DUCKDB -> new DuckDbSqlBuilder();
       default -> new PostgreSqlBuilder();
     };
   }

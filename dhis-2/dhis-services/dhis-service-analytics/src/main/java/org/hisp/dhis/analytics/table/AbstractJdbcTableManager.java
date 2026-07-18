@@ -246,6 +246,14 @@ public abstract class AbstractJdbcTableManager implements AnalyticsTableManager 
       if (!sqlBuilder.supportsDeclarativePartitioning()) {
         swappedPartitions.forEach(
             partition -> swapParentTable(partition, table.getName(), table.getMainName()));
+      } else {
+        // No physical partitions to re-parent: the incremental window populated by this latest
+        // update lives in the staging table itself, so append it into the existing main table
+        // before the staging table is dropped, or the update's data is silently lost.
+        // Deliberately not executeSilently: a failed append here must fail the update.
+        jdbcTemplate.execute(
+            sqlBuilder.insertIntoSelectFrom(
+                table.fromStaging(), sqlBuilder.quote(table.getName())));
       }
       dropTable(table);
     }
@@ -760,7 +768,9 @@ public abstract class AbstractJdbcTableManager implements AnalyticsTableManager 
     try {
       jdbcTemplate.execute(sql);
     } catch (DataAccessException ex) {
-      log.error(ex.getMessage());
+      // Swallowed by design (e.g. drop of a non-existing table), but always log the statement:
+      // a silently failed table swap otherwise leaves a stale analytics table with no trace.
+      log.error("Failed to execute SQL statement silently: '{}'", sql, ex);
     }
   }
 }

@@ -192,6 +192,15 @@ public interface SqlBuilder {
   boolean supportsVacuum();
 
   /**
+   * @return true if the DBMS supports {@code unlogged} tables (a PostgreSQL crash-unsafe table
+   *     optimization). Backends without the concept return false so {@code createTable} omits the
+   *     modifier rather than relying on the engine tolerating it.
+   */
+  default boolean supportsUnloggedTables() {
+    return true;
+  }
+
+  /**
    * @return true if the DBMS supports correlated subqueries.
    */
   boolean supportsCorrelatedSubquery();
@@ -537,6 +546,13 @@ public interface SqlBuilder {
    *     the table exists.
    */
   String tableExists(String name);
+
+  /**
+   * @param name the table name.
+   * @return a statement which will return one row per column of the given table, with a single
+   *     column holding the column name; no rows if the table does not exist.
+   */
+  String tableColumns(String name);
 
   /**
    * @param table the {@link Table}.

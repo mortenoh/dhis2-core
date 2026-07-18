@@ -195,12 +195,27 @@ public final class DatabasePoolUtils {
         firstNonNull(
             config.getPassword(), dhisConfig.getProperty(mapper.getConfigKey(CONNECTION_PASSWORD)));
 
+    final String connectionInitSql = config.getConnectionInitSql();
+    final boolean hasInitSql = connectionInitSql != null && !connectionInitSql.isBlank();
+
+    if (hasInitSql && dbPoolType == DbPoolType.C3P0) {
+      throw new IllegalArgumentException(
+          TextUtils.format(
+              "Pool '{}' requires per-connection initialization, which is not supported for "
+                  + "pool type C3P0. Use HIKARI (the default) or UNPOOLED.",
+              config.getDataSourceName()));
+    }
+
     final DataSource dataSource =
         switch (dbPoolType) {
           case HIKARI ->
               createHikariDbPool(
                   username, password, driverClassName, jdbcUrl, config, meterRegistry);
-          case UNPOOLED -> createNoPoolDataSource(username, password, driverClassName, jdbcUrl);
+          case UNPOOLED ->
+              hasInitSql
+                  ? new ConnectionInitDataSource(
+                      driverClassName, jdbcUrl, username, password, connectionInitSql)
+                  : createNoPoolDataSource(username, password, driverClassName, jdbcUrl);
           case C3P0 -> createC3p0DbPool(username, password, driverClassName, jdbcUrl, config);
           default ->
               throw new IllegalArgumentException(
@@ -261,10 +276,23 @@ public final class DatabasePoolUtils {
 
     HikariConfig hc = new HikariConfig();
     hc.setPoolName(config.getDataSourceName());
-    hc.setDriverClassName(driverClassName);
-    hc.setJdbcUrl(jdbcUrl);
-    hc.setUsername(username);
-    hc.setPassword(password);
+
+    // Per-connection init SQL (e.g. embedded DuckDB's ATTACH + session settings, which are not
+    // persisted to the database file and so must run on every physical connection). Routed through
+    // a wrapping DataSource rather than Hikari's connectionInitSql: the script may embed source
+    // database credentials, and Hikari logs configuration properties verbatim at DEBUG (masking
+    // only properties named *password*/jdbcUrl).
+    final String connectionInitSql = config.getConnectionInitSql();
+    if (connectionInitSql != null && !connectionInitSql.isBlank()) {
+      hc.setDataSource(
+          new ConnectionInitDataSource(
+              driverClassName, jdbcUrl, username, password, connectionInitSql));
+    } else {
+      hc.setDriverClassName(driverClassName);
+      hc.setJdbcUrl(jdbcUrl);
+      hc.setUsername(username);
+      hc.setPassword(password);
+    }
 
     // Skip unless explicitly configured; HikariCP defaults to Connection.isValid() which uses
     // the PG driver's lightweight protocol-level ping instead of executing a SQL query.

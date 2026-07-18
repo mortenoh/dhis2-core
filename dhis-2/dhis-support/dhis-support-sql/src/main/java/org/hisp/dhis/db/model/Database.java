@@ -47,5 +47,6 @@ package org.hisp.dhis.db.model;
 public enum Database {
   POSTGRESQL,
   DORIS,
-  CLICKHOUSE
+  CLICKHOUSE,
+  DUCKDB
 }

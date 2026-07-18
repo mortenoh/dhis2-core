@@ -369,7 +369,7 @@ public class PostgreSqlBuilder extends AbstractSqlBuilder {
 
   @Override
   public String createTable(Table table) {
-    String unlogged = table.isUnlogged() ? " unlogged" : "";
+    String unlogged = (table.isUnlogged() && supportsUnloggedTables()) ? " unlogged" : "";
 
     StringBuilder sql =
         new StringBuilder("create")
