@@ -95,7 +95,8 @@ Current standing of this backend, honestly stated:
   yields single unpartitioned tables per analytics table, populated without partition
   filters, swapped via multi-statement drop + rename, and queried through the main table —
   the same behavior as ClickHouse and Doris.
-- **Bugs found and fixed during the E2E run** (both invisible to unit tests):
+- **Bugs found and fixed during the E2E run** (both invisible to unit tests; full
+  write-ups with root causes in [DUCKDB_BUGS.md](DUCKDB_BUGS.md)):
   1. `qualifyTable` originally kept `analytics*` names local, which silently broke resource
      table replication (`insert into local select from qualifyTable(name)` copied the empty
      local table into itself, leaving period-structure lookups empty and aborting the
