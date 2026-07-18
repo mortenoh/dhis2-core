@@ -719,7 +719,7 @@ public class DefaultProgramIndicatorSubqueryBuilder implements ProgramIndicatorS
     if (relationshipType != null) {
       condition =
           RelationshipTypeJoinGenerator.generate(
-              SUBQUERY_TABLE_ALIAS, relationshipType, programIndicator.getAnalyticsType());
+              SUBQUERY_TABLE_ALIAS, relationshipType, programIndicator.getAnalyticsType(), sqlBuilder);
     } else {
       if (AnalyticsType.ENROLLMENT == outerSqlEntity) {
         condition = "";

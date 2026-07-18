@@ -95,8 +95,18 @@ Current standing of this backend, honestly stated:
 - **Validated end-to-end** against a real instance (Sierra Leone dev demo database, full
   `dhis.conf` setup, repeated full analytics exports): all 11 table types build, populate,
   and swap; the aggregate analytics API **exactly matches** sums computed directly on the
-  source PostgreSQL data; event aggregate/query, enrollment query, and org-unit-level
-  breakdowns all return correct data. All 49 DuckDB unit and execution tests pass.
+  source PostgreSQL data; event aggregate/query, enrollment query, org-unit-level
+  breakdowns, program indicators, and analytics-backed outlier detection all return correct
+  data. All 50 DuckDB unit and execution tests pass.
+- **Continuous analytics ("latest" partial update) validated live**: a data value changed
+  via the API flows into DuckDB analytics through the incremental path (delete stale rows,
+  populate only the update window, append into the main table) — verified by exact
+  arithmetic on a facility-level value across full and latest runs. Getting here required
+  fixing three latent bugs in shared code that affect every non-PostgreSQL backend (the
+  continuous job was previously blocked entirely by one of them); see git history.
+- **Not exercisable with demo data**: validation-result analytics (the demo database has no
+  validation results; the table type is correctly skipped) and relationship-based program
+  indicators (covered by unit tests instead).
 - **Partitioning verified** (previously a TODO): `supportsDeclarativePartitioning() = true`
   yields single unpartitioned tables per analytics table, populated without partition
   filters, swapped via multi-statement drop + rename, and queried through the main table —
