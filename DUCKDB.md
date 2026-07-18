@@ -184,10 +184,15 @@ Current standing of this backend, honestly stated:
   outside the pool, and was the source of a real bug fixed on this branch.
 - **No geospatial analytics** (currently): maps/geo features fall back accordingly, same as
   ClickHouse and Doris, whereas PostgreSQL+PostGIS supports them fully.
+- **Concurrency headroom**: DuckDB parallelizes a single query across cores well, but many
+  simultaneous dashboard users contend inside one process with one memory budget.
+  ClickHouse in particular is built for high concurrent query volume.
 - **Experimental**: no production track record in DHIS2 yet (though validated end-to-end
   against the demo database, see standing above), and the JDBC driver + extension ecosystem
   moves fast (pinned to `duckdb_jdbc` 1.5.4.0 — the latest release, engine v1.5.4, as of
   2026-06-17).
+- **Crash isolation**: an engine fault in an embedded database takes down the JVM with it,
+  unlike a separate server process.
 
 Engine features verified available through the pinned driver but not yet used (follow-up
 candidates): `MERGE INTO` on regular tables (could replace the latest-update delete+append
@@ -195,8 +200,6 @@ with a single upsert, at the cost of diverging from the shared cross-backend flo
 database-file encryption (`ATTACH ... (ENCRYPTION_KEY ...)`) — at-rest encryption of the
 analytics file via an optional `dhis.conf` key would be trivial to wire into the
 per-connection initializer.
-- **Crash isolation**: an engine fault in an embedded database takes down the JVM with it,
-  unlike a separate server process.
 
 ## Benchmark (Sierra Leone demo database)
 
@@ -219,6 +222,29 @@ Take with the usual caveats (demo-scale data, untuned PostgreSQL, HTTP overhead 
 sub-second queries), but directionally: DuckDB's export is substantially faster — largely
 because columnar storage needs no index-building phase — and query latency is equal or
 better across the suite.
+
+### Where the performance comes from — and where it goes away
+
+- **Export**: DuckDB skips work the other backends must do — no secondary indexes (Postgres
+  spends a large share of its export building hundreds of them), no vacuum/analyze phase,
+  and append-friendly columnar writes. Versus ClickHouse/Doris (also columnar) the win is
+  smaller and comes mainly from not paying a network hop per ingested row.
+- **Small queries**: DuckDB runs *in-process* — no network round trip, no wire
+  serialization. Dashboards issue many small queries where per-query overhead dominates,
+  which is why the suite above shows equal-or-better latency. ClickHouse/Doris pay the
+  network tax on every query and only pull ahead when individual queries are heavy enough
+  for distributed execution to matter.
+- **Where it degrades**: the engine shares the host with the JVM, so a heavy export or
+  aggregation competes with the web application itself (invisible in single-user benchmarks
+  like the one above); many concurrent users contend within one process and one memory
+  budget; and aggregations beyond the memory cap spill to disk — graceful, but a query that
+  is fast on a dedicated 256 GB ClickHouse node may crawl on a shared 16 GB app server.
+
+In short, the crossover to ClickHouse/Doris is driven by three distinct kinds of scale —
+data volume (single-node ceiling), concurrent users (process-level contention), and
+operations (HA, isolation, separate failure domains) — not by DuckDB's query engine running
+out of steam first. Where none of those pressures apply, DuckDB is not a compromise; it is
+likely the fastest option available while also being the cheapest to operate.
 
 ## Near-real-time analytics (continuous analytics)
 
