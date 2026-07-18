@@ -67,18 +67,16 @@ public class DuckDbSqlBuilder extends PostgreSqlBuilder {
   }
 
   /**
-   * Resolves a table reference. Generated analytics and resource tables (all prefixed {@code
-   * analytics}) are owned by the local DuckDB database and must be referenced unqualified — they
-   * are created and written there. Every other name is a DHIS2 source table read from the attached,
-   * read-only PostgreSQL database {@code pg} (postgres_scanner). Qualifying an owned table to
-   * {@code pg} would target the read-only source (e.g. the partial-update delete in {@code
-   * removeUpdatedData}) and fail.
+   * Qualifies a table as a source table read from the attached, read-only PostgreSQL database
+   * {@code pg} (postgres_scanner). Like the Doris and ClickHouse implementations, this
+   * unconditionally targets the transaction database — callers referencing generated tables owned
+   * by the analytics database (created and written locally) must use {@link #quote(String)}
+   * instead. Table replication relies on this: it copies {@code analytics_rs_*} resource tables
+   * from the source database into identically-named local tables, so qualifying by name prefix
+   * would read the empty local table back into itself.
    */
   @Override
   public String qualifyTable(String name) {
-    if (name.startsWith("analytics")) {
-      return quote(name);
-    }
     return String.format("%s.public.%s", SOURCE_ALIAS, quote(name));
   }
 
@@ -112,7 +110,11 @@ public class DuckDbSqlBuilder extends PostgreSqlBuilder {
 
   /**
    * DuckDB has no table inheritance; returning true avoids the Postgres {@code inherits(...)} path
-   * in {@code createTable}. TODO verify against the analytics table managers' partition handling.
+   * in {@code createTable}. Verified against the analytics table managers end-to-end: each
+   * analytics table is created as a single unpartitioned staging table (no per-year partition
+   * tables, no partition WHERE filters on populate), swapped into place with drop + rename, and
+   * queried through the main table ({@code JdbcAnalyticsManager} skips partition routing when
+   * declarative partitioning is supported) — the same behavior as ClickHouse and Doris.
    */
   @Override
   public boolean supportsDeclarativePartitioning() {
@@ -140,6 +142,23 @@ public class DuckDbSqlBuilder extends PostgreSqlBuilder {
   @Override
   public String createIndex(Index index) {
     return notSupported();
+  }
+
+  /**
+   * Local DuckDB tables live in schema {@code main} of the current database, not {@code public} —
+   * the inherited PostgreSQL check ({@code table_schema = 'public'}) always returns empty, which
+   * silently breaks the "master table exists" decision during analytics table swaps. Restricting
+   * to {@code current_database()} keeps tables of the attached {@code pg} source database out of
+   * the result.
+   */
+  @Override
+  public String tableExists(String name) {
+    return String.format(
+        """
+        select t.table_name from information_schema.tables t \
+        where t.table_catalog = current_database() \
+        and t.table_schema = 'main' and t.table_name = %s;""",
+        singleQuote(name));
   }
 
   /**
