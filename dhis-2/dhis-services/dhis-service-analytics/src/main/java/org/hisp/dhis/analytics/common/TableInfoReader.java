@@ -36,6 +36,7 @@ import java.util.Set;
 import javax.annotation.Nonnull;
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import org.hisp.dhis.db.sql.SqlBuilder;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -53,6 +54,8 @@ public class TableInfoReader {
   @Qualifier("analyticsJdbcTemplate")
   private final JdbcTemplate jdbcTemplate;
 
+  private final SqlBuilder sqlBuilder;
+
   /**
    * Returns the metadata information for the given table.
    *
@@ -63,14 +66,11 @@ public class TableInfoReader {
   public TableInfo getInfo(@Nonnull String tableName) {
     hasText(tableName, "Param 'tableName' cannot be null/blank");
 
-    String sql =
-        "select column_name"
-            + " from information_schema.columns"
-            + " where table_schema = 'public'"
-            + " and table_name = ?";
-
+    // Dialect-aware: local tables live in schema 'public' on PostgreSQL/Doris but 'main' on
+    // DuckDB, and ClickHouse uses system.columns. A hardcoded 'public' filter returns no columns
+    // on DuckDB, which made the continuous analytics job's outlier consistency check always fail.
     Set<String> tableColumns =
-        jdbcTemplate.queryForList(sql, String.class, tableName).stream()
+        jdbcTemplate.queryForList(sqlBuilder.tableColumns(tableName), String.class).stream()
             .collect(toUnmodifiableSet());
 
     return new TableInfo(tableName, tableColumns);

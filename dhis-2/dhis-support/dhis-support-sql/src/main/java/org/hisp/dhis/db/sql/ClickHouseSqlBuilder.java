@@ -475,6 +475,17 @@ public class ClickHouseSqlBuilder extends AbstractSqlBuilder {
   }
 
   @Override
+  public String tableColumns(String name) {
+    return String.format(
+        """
+        select c.name as column_name \
+        from system.columns c \
+        where c.database = 'default' \
+        and c.table = %s;""",
+        singleQuote(name));
+  }
+
+  @Override
   public String createIndex(Index index) {
     return notSupported();
   }

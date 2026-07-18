@@ -45,6 +45,16 @@ Analytics table swap errors are swallowed by `executeSilently` in
 transactional catalog semantics, a swap racing a concurrent query could silently leave a
 stale table. Watch the logs when diagnosing unexpected query results during exports.
 
+## Geospatial event clustering emits PostGIS SQL without a capability guard (latent)
+
+`JdbcEventAnalyticsManager.getEventClusters(...)` generates PostGIS-only SQL (`ST_Extent`,
+`ST_SnapToGrid`, `ST_Transform`, ...) without checking `supportsGeospatialData()`. On DuckDB
+this is effectively unreachable — geospatial support is disabled, so analytics tables carry
+no geometry columns and geometry-bearing queries cannot be composed — but the method itself
+is unguarded. If map clustering ever becomes reachable on a non-PostGIS backend, guard the
+endpoint on `supportsGeospatialData()` and return an unsupported-feature error. (Same
+exposure exists for ClickHouse/Doris upstream.)
+
 ## Gotchas that look like bugs but aren't
 
 - **"Leftover" `_temp` staging tables when inspecting the `.duckdb` file externally**: the

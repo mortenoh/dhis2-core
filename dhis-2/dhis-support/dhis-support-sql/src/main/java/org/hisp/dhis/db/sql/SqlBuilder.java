@@ -548,6 +548,13 @@ public interface SqlBuilder {
   String tableExists(String name);
 
   /**
+   * @param name the table name.
+   * @return a statement which will return one row per column of the given table, with a single
+   *     column holding the column name; no rows if the table does not exist.
+   */
+  String tableColumns(String name);
+
+  /**
    * @param table the {@link Table}.
    * @return a count rows statement.
    */

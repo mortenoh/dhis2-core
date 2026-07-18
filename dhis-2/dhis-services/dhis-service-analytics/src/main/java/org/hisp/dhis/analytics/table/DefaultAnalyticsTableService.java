@@ -347,6 +347,14 @@ public class DefaultAnalyticsTableService implements AnalyticsTableService {
     for (AnalyticsTable table : tables) {
       if (table.hasTablePartitions() && !sqlBuilder.supportsDeclarativePartitioning()) {
         partitions.addAll(table.getTablePartitions());
+      } else if (table.getLatestTablePartition() != null) {
+        // Fake partition representing the master table, carrying the latest partition's window
+        // so the populate SQL keeps its incremental filter (databases with declarative
+        // partitioning populate the master staging table directly)
+        AnalyticsTablePartition latest = table.getLatestTablePartition();
+        partitions.add(
+            new AnalyticsTablePartition(
+                table, latest.getYear(), latest.getStartDate(), latest.getEndDate()));
       } else {
         // Fake partition representing the master table
         partitions.add(new AnalyticsTablePartition(table));

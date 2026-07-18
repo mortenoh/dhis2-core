@@ -136,6 +136,17 @@ public class DuckDbAnalyticsSqlBuilder extends PostgreSqlAnalyticsSqlBuilder {
         singleQuote(name));
   }
 
+  /** Local tables live in schema {@code main}; see {@link DuckDbSqlBuilder#tableColumns}. */
+  @Override
+  public String tableColumns(String name) {
+    return String.format(
+        """
+        select c.column_name from information_schema.columns c \
+        where c.table_catalog = current_database() \
+        and c.table_schema = 'main' and c.table_name = %s;""",
+        singleQuote(name));
+  }
+
   /** DuckDB uses regexp_matches(...) rather than the Postgres {@code ~} / {@code ~*} operators. */
   @Override
   public String regexpMatch(String value, String pattern) {

@@ -39,6 +39,8 @@ import static org.hisp.dhis.test.TestBase.getDate;
 import static org.mockito.Mockito.when;
 
 import java.util.Date;
+import org.hisp.dhis.db.sql.PostgreSqlBuilder;
+import org.hisp.dhis.db.sql.SqlBuilder;
 import org.hisp.dhis.program.AnalyticsType;
 import org.hisp.dhis.program.Program;
 import org.hisp.dhis.program.ProgramIndicator;
@@ -51,6 +53,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
@@ -74,6 +77,8 @@ class ProgramIndicatorSubqueryBuilderTest {
   private Date endDate;
 
   @Mock private ProgramIndicatorService programIndicatorService;
+
+  @Spy private SqlBuilder sqlBuilder = new PostgreSqlBuilder();
 
   @InjectMocks private DefaultProgramIndicatorSubqueryBuilder subject;
 
@@ -171,12 +176,12 @@ class ProgramIndicatorSubqueryBuilderTest {
         is(
             "(SELECT avg (distinct event) FROM analytics_event_"
                 + program.getUid().toLowerCase()
-                + " as subax WHERE  subax.trackedentity in (select te.uid from trackedentity te "
-                + "left join relationshipitem ri on te.trackedentityid = ri.trackedentityid  "
-                + "left join relationship r on r.from_relationshipitemid = ri.relationshipitemid "
-                + "left join relationshipitem ri2 on r.to_relationshipitemid = ri2.relationshipitemid "
-                + "left join relationshiptype rty on rty.relationshiptypeid = r.relationshiptypeid "
-                + "left join trackedentity te2 on te2.trackedentityid = ri2.trackedentityid "
+                + " as subax WHERE  subax.trackedentity in (select te.uid from \"trackedentity\" te "
+                + "left join \"relationshipitem\" ri on te.trackedentityid = ri.trackedentityid  "
+                + "left join \"relationship\" r on r.from_relationshipitemid = ri.relationshipitemid "
+                + "left join \"relationshipitem\" ri2 on r.to_relationshipitemid = ri2.relationshipitemid "
+                + "left join \"relationshiptype\" rty on rty.relationshiptypeid = r.relationshiptypeid "
+                + "left join \"trackedentity\" te2 on te2.trackedentityid = ri2.trackedentityid "
                 + "WHERE rty.relationshiptypeid = "
                 + relationshipType.getId()
                 + " and te2.uid = ax.trackedentity ))"));

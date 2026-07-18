@@ -161,6 +161,17 @@ public class DuckDbSqlBuilder extends PostgreSqlBuilder {
         singleQuote(name));
   }
 
+  /** Same schema consideration as {@link #tableExists(String)}. */
+  @Override
+  public String tableColumns(String name) {
+    return String.format(
+        """
+        select c.column_name from information_schema.columns c \
+        where c.table_catalog = current_database() \
+        and c.table_schema = 'main' and c.table_name = %s;""",
+        singleQuote(name));
+  }
+
   /**
    * DuckDB has no {@code ~} / {@code ~*} regex operators; it uses the {@code regexp_matches}
    * function (returns boolean). Pattern matching is case-sensitive like Postgres {@code ~}.

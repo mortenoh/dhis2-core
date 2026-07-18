@@ -246,6 +246,13 @@ public abstract class AbstractJdbcTableManager implements AnalyticsTableManager 
       if (!sqlBuilder.supportsDeclarativePartitioning()) {
         swappedPartitions.forEach(
             partition -> swapParentTable(partition, table.getName(), table.getMainName()));
+      } else {
+        // No physical partitions to re-parent: the incremental window populated by this latest
+        // update lives in the staging table itself, so append it into the existing main table
+        // before the staging table is dropped, or the update's data is silently lost.
+        // Deliberately not executeSilently: a failed append here must fail the update.
+        jdbcTemplate.execute(
+            sqlBuilder.insertIntoSelectFrom(table.fromStaging(), sqlBuilder.quote(table.getName())));
       }
       dropTable(table);
     }
