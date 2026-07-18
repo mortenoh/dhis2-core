@@ -186,7 +186,15 @@ Current standing of this backend, honestly stated:
   ClickHouse and Doris, whereas PostgreSQL+PostGIS supports them fully.
 - **Experimental**: no production track record in DHIS2 yet (though validated end-to-end
   against the demo database, see standing above), and the JDBC driver + extension ecosystem
-  moves fast (currently pinned to `duckdb_jdbc` 1.5.4.0).
+  moves fast (pinned to `duckdb_jdbc` 1.5.4.0 — the latest release, engine v1.5.4, as of
+  2026-06-17).
+
+Engine features verified available through the pinned driver but not yet used (follow-up
+candidates): `MERGE INTO` on regular tables (could replace the latest-update delete+append
+with a single upsert, at the cost of diverging from the shared cross-backend flow), and
+database-file encryption (`ATTACH ... (ENCRYPTION_KEY ...)`) — at-rest encryption of the
+analytics file via an optional `dhis.conf` key would be trivial to wire into the
+per-connection initializer.
 - **Crash isolation**: an engine fault in an embedded database takes down the JVM with it,
   unlike a separate server process.
 
