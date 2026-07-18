@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2024, University of Oslo
+ * Copyright (c) 2004-2026, University of Oslo
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -186,13 +186,19 @@ public class DuckDbSqlBuilder extends PostgreSqlBuilder {
 
   /**
    * Builds the DuckDB session-initialization SQL that must run on <b>every</b> physical connection
-   * (wired as Hikari {@code connectionInitSql}). DuckDB's ATTACH and {@code memory_limit} / {@code
-   * temp_directory} / {@code preserve_insertion_order} settings are connection/instance session
-   * state — not persisted to the {@code .duckdb} file — so a connection that did not run them fails
-   * queries against {@code pg.public."..."} with "schema pg does not exist". All statements are
-   * idempotent: {@code install}/{@code load} are no-ops when already done, {@code attach} uses
-   * {@code if not exists} (so it is safe when a shared in-process instance already has {@code pg}),
-   * and the {@code set} statements are global.
+   * (wired via {@code ConnectionInitDataSource} rather than pool configuration, since the ATTACH
+   * DSN embeds the source database credentials and pool implementations log their configuration at
+   * DEBUG). DuckDB's ATTACH and {@code memory_limit} / {@code temp_directory} / {@code
+   * preserve_insertion_order} settings are connection/instance session state — not persisted to
+   * the {@code .duckdb} file — so a connection that did not run them fails queries against {@code
+   * pg.public."..."} with "schema pg does not exist". All statements are idempotent: {@code
+   * install}/{@code load} are no-ops when already done, {@code attach} uses {@code if not exists}
+   * (so it is safe when a shared in-process instance already has {@code pg}), and the {@code set}
+   * statements are global.
+   *
+   * <p>Note that {@code install postgres} downloads the extension from the DuckDB extension
+   * repository on first use (it is not bundled with the JDBC driver), requiring outbound network
+   * access and a writable extension directory; see {@code AnalyticsDatabaseInit#initDuckDb}.
    *
    * @param host source PostgreSQL host.
    * @param port source PostgreSQL port.

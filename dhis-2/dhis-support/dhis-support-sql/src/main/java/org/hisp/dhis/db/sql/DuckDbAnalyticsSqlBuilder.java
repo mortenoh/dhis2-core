@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2024, University of Oslo
+ * Copyright (c) 2004-2026, University of Oslo
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -29,16 +29,19 @@
  */
 package org.hisp.dhis.db.sql;
 
+import java.util.Optional;
 import org.hisp.dhis.db.model.Database;
 import org.hisp.dhis.db.model.Index;
+import org.hisp.dhis.period.PeriodTypeEnum;
 
 /**
  * Implementation of {@link AnalyticsSqlBuilder} for DuckDB.
  *
  * <p>Extends {@link PostgreSqlAnalyticsSqlBuilder} (not {@link DuckDbSqlBuilder}) so the large
  * PostgreSQL period-bucket block in {@code renderDateFieldPeriodBucketDate(...)} plus {@code
- * renderTimestamp} / {@code castAsDate} / {@code nullIfEmpty} are inherited verbatim — DuckDB
- * accepts that SQL. The handful of DuckDB-divergent base methods are re-applied here (they mirror
+ * renderTimestamp} / {@code castAsDate} / {@code nullIfEmpty} are inherited — DuckDB accepts that
+ * SQL, except the {@code BI_MONTHLY} bucket which relies on PostgreSQL integer division and is
+ * overridden here. The handful of DuckDB-divergent base methods are re-applied here (they mirror
  * {@link DuckDbSqlBuilder}; Java single inheritance makes the duplication hard to avoid without
  * refactoring the base classes).
  *
@@ -148,6 +151,24 @@ public class DuckDbAnalyticsSqlBuilder extends PostgreSqlAnalyticsSqlBuilder {
   @Override
   public String jsonExtract(String json, String key, String property) {
     return String.format("json_extract_string(%s, '$.%s.%s')", json, key, property);
+  }
+
+  /**
+   * PostgreSQL's {@code /} on integers truncates, so the inherited BI_MONTHLY expression relies on
+   * {@code (month - 1) / 2} being integral. DuckDB's {@code /} always yields DOUBLE, which {@code
+   * make_date(int, ..., int)} rejects with a binder error; DuckDB's integer division operator is
+   * {@code //}. All other inherited period-bucket expressions execute unchanged on DuckDB (covered
+   * by {@code DuckDbExecutionTest}).
+   */
+  @Override
+  public Optional<String> renderDateFieldPeriodBucketDate(
+      String dateColumn, PeriodTypeEnum periodType) {
+    if (periodType == PeriodTypeEnum.BI_MONTHLY) {
+      return Optional.of(
+          "make_date( extract(year from %1$s)::int, ((extract(month from %1$s)::int - 1) // 2) * 2 + 1, 1 )"
+              .formatted(dateColumn));
+    }
+    return super.renderDateFieldPeriodBucketDate(dateColumn, periodType);
   }
 
   /**
