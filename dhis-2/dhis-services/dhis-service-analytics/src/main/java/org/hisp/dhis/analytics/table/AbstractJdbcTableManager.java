@@ -767,7 +767,9 @@ public abstract class AbstractJdbcTableManager implements AnalyticsTableManager 
     try {
       jdbcTemplate.execute(sql);
     } catch (DataAccessException ex) {
-      log.error(ex.getMessage());
+      // Swallowed by design (e.g. drop of a non-existing table), but always log the statement:
+      // a silently failed table swap otherwise leaves a stale analytics table with no trace.
+      log.error("Failed to execute SQL statement silently: '{}'", sql, ex);
     }
   }
 }
