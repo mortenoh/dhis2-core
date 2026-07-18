@@ -59,9 +59,10 @@ class DuckDbAnalyticsSqlBuilderTest {
 
   @Test
   void testQualifyTableSourceVsOwned() {
-    // Source tables -> attached read-only pg; generated analytics tables -> local DuckDB.
+    // qualifyTable always references the attached read-only pg source database.
     assertEquals("pg.public.\"trackerevent\"", sqlBuilder.qualifyTable("trackerevent"));
-    assertEquals("\"analytics_event_2020\"", sqlBuilder.qualifyTable("analytics_event_2020"));
+    assertEquals(
+        "pg.public.\"analytics_event_2020\"", sqlBuilder.qualifyTable("analytics_event_2020"));
   }
 
   @Test

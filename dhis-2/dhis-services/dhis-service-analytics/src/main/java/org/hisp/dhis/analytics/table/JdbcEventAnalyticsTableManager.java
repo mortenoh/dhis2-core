@@ -378,7 +378,7 @@ public class JdbcEventAnalyticsTableManager extends AbstractEventJdbcTableManage
                     and ev.lastupdated >= '${startDate}' \
                     and ev.lastupdated < '${endDate}');""",
                 Map.of(
-                    "tableName", sqlBuilder.qualifyTable(table.getMainName()),
+                    "tableName", sqlBuilder.quote(table.getMainName()),
                     "programId", String.valueOf(program.getId()),
                     "startDate", toLongDate(partition.getStartDate()),
                     "endDate", toLongDate(partition.getEndDate())));
@@ -403,7 +403,7 @@ public class JdbcEventAnalyticsTableManager extends AbstractEventJdbcTableManage
                     and ev.lastupdated >= '${startDate}' \
                     and ev.lastupdated < '${endDate}');""",
                   Map.of(
-                      "tableName", sqlBuilder.qualifyTable(table.getMainName()),
+                      "tableName", sqlBuilder.quote(table.getMainName()),
                       "programStageId", String.valueOf(programStageId),
                       "startDate", toLongDate(partition.getStartDate()),
                       "endDate", toLongDate(partition.getEndDate())));

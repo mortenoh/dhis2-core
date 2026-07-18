@@ -113,16 +113,24 @@ public class DuckDbAnalyticsSqlBuilder extends PostgreSqlAnalyticsSqlBuilder {
   }
 
   /**
-   * Generated analytics and resource tables (all prefixed {@code analytics}) are owned by the local
-   * DuckDB database; only DHIS2 source tables are read from the attached, read-only PostgreSQL
-   * database {@code pg}. See {@link DuckDbSqlBuilder#qualifyTable(String)}.
+   * Qualifies a table as a source table in the attached, read-only PostgreSQL database {@code pg},
+   * unconditionally — generated tables owned by the analytics database are referenced with {@link
+   * #quote(String)}. See {@link DuckDbSqlBuilder#qualifyTable(String)}.
    */
   @Override
   public String qualifyTable(String name) {
-    if (name.startsWith("analytics")) {
-      return quote(name);
-    }
     return String.format("%s.public.%s", SOURCE_ALIAS, quote(name));
+  }
+
+  /** Local tables live in schema {@code main}; see {@link DuckDbSqlBuilder#tableExists}. */
+  @Override
+  public String tableExists(String name) {
+    return String.format(
+        """
+        select t.table_name from information_schema.tables t \
+        where t.table_catalog = current_database() \
+        and t.table_schema = 'main' and t.table_name = %s;""",
+        singleQuote(name));
   }
 
   /** DuckDB uses regexp_matches(...) rather than the Postgres {@code ~} / {@code ~*} operators. */

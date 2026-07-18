@@ -75,7 +75,7 @@ Out of scope (for now):
 
 | | PostgreSQL | ClickHouse | Doris | DuckDB (this branch) |
 |---|---|---|---|---|
-| Maturity in DHIS2 | Default, fully supported | Supported alternate | Supported alternate | **Experimental / in development** |
+| Maturity in DHIS2 | Default, fully supported | Supported alternate | Supported alternate | **Experimental — validated E2E against the demo DB** |
 | Deployment model | Server (usually shared with transaction DB) | Separate server/cluster | Separate cluster (FE+BE) | **Embedded in the DHIS2 JVM** |
 | Storage model | Row-oriented | Columnar | Columnar (MPP) | Columnar |
 | Source-DB access | Same database | Named collection + `postgresql()` table function | JDBC catalog | `postgres` extension, read-only `ATTACH` as `pg` |
@@ -86,18 +86,49 @@ Out of scope (for now):
 
 Current standing of this backend, honestly stated:
 
-- **Working**: SQL generation for aggregate (data value) analytics tables, event analytics
-  including the JSON event-data-values column, the outlier statistics sub-query, source-table
-  qualification, pooled-connection initialization, and memory tuning. All 47 DuckDB unit and
-  execution tests pass, including live partial-update delete against an owned table.
-- **Not yet validated end-to-end**: a full analytics table export + query run against a real
-  DHIS2 instance (enrollment, tracked-entity, and validation-result analytics have not been
-  exercised specifically). The `supportsDeclarativePartitioning()` override carries a TODO to
-  verify interaction with the table managers' partition handling.
+- **Validated end-to-end** against a real instance (Sierra Leone dev demo database, full
+  `dhis.conf` setup, repeated full analytics exports): all 11 table types build, populate,
+  and swap; the aggregate analytics API **exactly matches** sums computed directly on the
+  source PostgreSQL data; event aggregate/query, enrollment query, and org-unit-level
+  breakdowns all return correct data. All 49 DuckDB unit and execution tests pass.
+- **Partitioning verified** (previously a TODO): `supportsDeclarativePartitioning() = true`
+  yields single unpartitioned tables per analytics table, populated without partition
+  filters, swapped via multi-statement drop + rename, and queried through the main table —
+  the same behavior as ClickHouse and Doris.
+- **Bugs found and fixed during the E2E run** (both invisible to unit tests):
+  1. `qualifyTable` originally kept `analytics*` names local, which silently broke resource
+     table replication (`insert into local select from qualifyTable(name)` copied the empty
+     local table into itself, leaving period-structure lookups empty and aborting the
+     DATA_VALUE stage with "nothing to update"). `qualifyTable` now unconditionally targets
+     the attached `pg` source — the same contract as Doris/ClickHouse — and the
+     `removeUpdatedData` delete targets in the shared table managers use `quote()` (local)
+     instead, which is identical SQL on PostgreSQL.
+  2. `tableExists` inherited the PostgreSQL check (`table_schema = 'public'`), but local
+     DuckDB tables live in schema `main` — the "master table exists" decision during swaps
+     was always false (and could match same-named tables in the attached source instead).
+     DuckDB now checks `table_schema = 'main'` scoped to `current_database()`.
+- **Tracked-entity analytics stays on PostgreSQL by upstream design**: the TE table managers
+  are wired with `analyticsPostgresJdbcTemplate` and `postgresSqlBuilder` regardless of the
+  configured analytics database (this applies equally to ClickHouse/Doris), so TE tables and
+  queries do not exercise DuckDB at all.
 - **Known duplication**: `DuckDbAnalyticsSqlBuilder` re-applies the base dialect overrides
   from `DuckDbSqlBuilder` because Java single inheritance prevents extending both
   `PostgreSqlAnalyticsSqlBuilder` and `DuckDbSqlBuilder`; a base-class refactor would remove
   this.
+- **Caveats observed while testing** (not DuckDB-specific, but worth knowing):
+  - An upstream bug in `AnalyticsCache` breaks *cached* event analytics responses on any
+    backend: grids holding a non-serializable `Pager` fail the serialization-based deep
+    clone, and the API degrades to an empty result. With the demo database (which enables
+    caching in system settings), set `keyCacheStrategy` to `NO_CACHE` or apply the upstream
+    fix before judging query results.
+  - Analytics table swap errors are swallowed by `executeSilently` (upstream pattern). On an
+    embedded engine with transactional catalog semantics, a swap racing a concurrent query
+    could silently leave a stale table; watch the logs when diagnosing unexpected query
+    results during exports.
+  - The `.duckdb` file alone is not the full database state — un-checkpointed changes live in
+    the `.duckdb.wal` file next to it. When inspecting a live instance's file with an
+    external tool, copy both files or you will see a stale catalog (e.g. staging tables that
+    were already renamed).
 
 ## Pros and cons
 
@@ -131,9 +162,9 @@ Current standing of this backend, honestly stated:
   outside the pool, and was the source of a real bug fixed on this branch.
 - **No geospatial analytics** (currently): maps/geo features fall back accordingly, same as
   ClickHouse and Doris, whereas PostgreSQL+PostGIS supports them fully.
-- **Experimental**: no production track record in DHIS2, incomplete end-to-end validation
-  (see standing above), and the JDBC driver + extension ecosystem moves fast
-  (currently pinned to `duckdb_jdbc` 1.5.4.0).
+- **Experimental**: no production track record in DHIS2 yet (though validated end-to-end
+  against the demo database, see standing above), and the JDBC driver + extension ecosystem
+  moves fast (currently pinned to `duckdb_jdbc` 1.5.4.0).
 - **Crash isolation**: an engine fault in an embedded database takes down the JVM with it,
   unlike a separate server process.
 

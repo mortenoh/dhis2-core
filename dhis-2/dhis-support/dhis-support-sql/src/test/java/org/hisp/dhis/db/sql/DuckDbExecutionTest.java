@@ -66,16 +66,16 @@ class DuckDbExecutionTest {
   }
 
   /**
-   * The partial-update path ({@code removeUpdatedData}) deletes from a generated analytics table.
-   * {@code qualifyTable} must resolve an owned {@code analytics*} table to the LOCAL DuckDB table —
-   * not the attached read-only {@code pg} — so the delete actually executes. Reproduce that delete
-   * shape in-process and assert source tables still resolve to {@code pg}.
+   * The partial-update path ({@code removeUpdatedData}) deletes from a generated analytics table,
+   * referenced with {@code quote} (local DuckDB table), never {@code qualifyTable} (which always
+   * targets the attached read-only {@code pg} source — table replication depends on that).
+   * Reproduce that delete shape in-process and assert source resolution stays on {@code pg}.
    */
   @Test
   void testOwnedAnalyticsTableDeleteExecutesLocally() throws Exception {
     try (Connection connection = DriverManager.getConnection("jdbc:duckdb::memory:");
         Statement statement = connection.createStatement()) {
-      String owned = sqlBuilder.qualifyTable("analytics_event_2020");
+      String owned = sqlBuilder.quote("analytics_event_2020");
       assertEquals("\"analytics_event_2020\"", owned);
 
       statement.execute("create table " + owned + " (event varchar, lastupdated date)");
@@ -88,8 +88,45 @@ class DuckDbExecutionTest {
         assertEquals(1, rs.getInt("c"));
       }
 
-      // Source tables remain qualified to the attached pg database (not local).
+      // qualifyTable always targets the attached pg source database, even for analytics names —
+      // table replication copies pg-side analytics_rs_* tables into local tables of the same name.
       assertTrue(sqlBuilder.qualifyTable("datavalue").startsWith("pg."));
+      assertEquals(
+          "pg.public.\"analytics_rs_periodstructure\"",
+          sqlBuilder.qualifyTable("analytics_rs_periodstructure"));
+    }
+  }
+
+  /**
+   * The swap path decides "master table exists" through {@code tableExists}. Local DuckDB tables
+   * live in schema {@code main}, so the inherited PostgreSQL check ({@code table_schema =
+   * 'public'}) always came back empty. Assert the generated check finds a local table, and the
+   * multi-statement swap (drop + rename) leaves exactly the main table.
+   */
+  @Test
+  void testTableExistsAndSwapExecuteLocally() throws Exception {
+    try (Connection connection = DriverManager.getConnection("jdbc:duckdb::memory:");
+        Statement statement = connection.createStatement()) {
+      statement.execute("create table \"analytics_2024_temp\" (i integer)");
+
+      try (ResultSet rs = statement.executeQuery(sqlBuilder.tableExists("analytics_2024_temp"))) {
+        assertTrue(rs.next(), "tableExists must find a local table");
+      }
+      try (ResultSet rs = statement.executeQuery(sqlBuilder.tableExists("analytics_2024"))) {
+        assertFalse(rs.next(), "tableExists must not find a missing table");
+      }
+
+      // The exact multi-statement swap shape from AbstractSqlBuilder#swapTable.
+      statement.execute(
+          "drop table if exists \"analytics_2024\" cascade; "
+              + "alter table \"analytics_2024_temp\" rename to \"analytics_2024\";");
+
+      try (ResultSet rs = statement.executeQuery(sqlBuilder.tableExists("analytics_2024"))) {
+        assertTrue(rs.next(), "swap must produce the main table");
+      }
+      try (ResultSet rs = statement.executeQuery(sqlBuilder.tableExists("analytics_2024_temp"))) {
+        assertFalse(rs.next(), "swap must remove the staging table");
+      }
     }
   }
 

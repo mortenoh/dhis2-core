@@ -63,13 +63,15 @@ class DuckDbSqlBuilderTest {
   }
 
   @Test
-  void testQualifyTableKeepsOwnedAnalyticsTablesLocal() {
-    // Generated analytics/resource tables live in DuckDB, not the read-only attached pg.
-    assertEquals("\"analytics\"", sqlBuilder.qualifyTable("analytics"));
-    assertEquals("\"analytics_event_2020\"", sqlBuilder.qualifyTable("analytics_event_2020"));
+  void testQualifyTableAlwaysTargetsSource() {
+    // qualifyTable unconditionally references the attached pg source database, matching the Doris
+    // and ClickHouse contract. Table replication reads pg-side analytics_rs_* tables through it;
+    // locally-owned generated tables are referenced with quote() instead.
+    assertEquals("pg.public.\"analytics\"", sqlBuilder.qualifyTable("analytics"));
     assertEquals(
-        "\"analytics_rs_orgunitstructure\"",
+        "pg.public.\"analytics_rs_orgunitstructure\"",
         sqlBuilder.qualifyTable("analytics_rs_orgunitstructure"));
+    assertEquals("\"analytics_event_2020\"", sqlBuilder.quote("analytics_event_2020"));
   }
 
   @Test
