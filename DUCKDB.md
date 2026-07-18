@@ -104,9 +104,13 @@ Current standing of this backend, honestly stated:
   arithmetic on a facility-level value across full and latest runs. Getting here required
   fixing three latent bugs in shared code that affect every non-PostgreSQL backend (the
   continuous job was previously blocked entirely by one of them); see git history.
-- **Not exercisable with demo data**: validation-result analytics (the demo database has no
-  validation results; the table type is correctly skipped) and relationship-based program
-  indicators (covered by unit tests instead).
+- **Validation-result analytics verified**: with seeded validation results, the
+  `analytics_validationresult` table builds on DuckDB and validation-rule queries aggregate
+  exactly (18 seeded violations → correct per-rule/per-month counts).
+- **Relationship-based program indicators verified for parity**: the relationship-traversal
+  SQL (`RelationshipTypeJoinGenerator`) executes on DuckDB against the attached source
+  tables, and a relationship-scoped PI query returns results identical to the PostgreSQL
+  backend on the same data.
 - **Partitioning verified** (previously a TODO): `supportsDeclarativePartitioning() = true`
   yields single unpartitioned tables per analytics table, populated without partition
   filters, swapped via multi-statement drop + rename, and queried through the main table —
@@ -185,6 +189,28 @@ Current standing of this backend, honestly stated:
   moves fast (currently pinned to `duckdb_jdbc` 1.5.4.0).
 - **Crash isolation**: an engine fault in an embedded database takes down the JVM with it,
   unlike a separate server process.
+
+## Benchmark (Sierra Leone demo database)
+
+Same host, same demo database, analytics cache disabled, identical query suite (medians of
+7 runs after warmup); PostgreSQL 16 in Docker with default configuration (untuned), DuckDB
+embedded in the DHIS2 JVM. Row counts were identical across backends for every query.
+
+| Measure | DuckDB | PostgreSQL |
+|---|---|---|
+| Full analytics export (first run) | 93 s | 661 s |
+| Full analytics export (repeat) | 78 s | 138 s |
+| Aggregate, national, 12 months (24 rows) | 0.19 s | 0.20 s |
+| Aggregate, chiefdom level, 4 quarters (597 rows) | 0.19 s | 0.21 s |
+| Event aggregate, district level, 12 months (156 rows) | 0.10 s | 0.13 s |
+| Event query, page of 100 | 0.10 s | 0.13 s |
+| Enrollment query, page of 100 | 0.10 s | 0.10 s |
+| Program indicators, district level (312 rows) | 0.10 s | 0.18 s |
+
+Take with the usual caveats (demo-scale data, untuned PostgreSQL, HTTP overhead dominating
+sub-second queries), but directionally: DuckDB's export is substantially faster — largely
+because columnar storage needs no index-building phase — and query latency is equal or
+better across the suite.
 
 ## Configuration example
 
