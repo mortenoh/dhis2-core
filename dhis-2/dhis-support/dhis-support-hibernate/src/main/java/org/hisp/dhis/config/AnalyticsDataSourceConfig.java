@@ -185,6 +185,7 @@ public class AnalyticsDataSourceConfig {
     // run on every physical pool connection (not once at startup), or queries against the attached
     // source ('pg') fail on connections that never ran the init.
     if (database == Database.DUCKDB) {
+      validateDuckDbUrl(jdbcUrl);
       poolConfigBuilder.connectionInitSql(buildDuckDbConnectionInitSql());
     }
 
@@ -308,5 +309,34 @@ public class AnalyticsDataSourceConfig {
       }
     }
     return null;
+  }
+
+  /**
+   * Rejects in-memory DuckDB URLs for the analytics datasource. Each in-memory JDBC connection
+   * owns its own private database, so behind a connection pool every pooled connection would see
+   * a different, unrelated database: tables created and populated through one connection are
+   * invisible to queries running on another. Only a file-backed database gives all pooled
+   * connections a shared view. (In-memory remains fine for single-connection use such as unit
+   * tests, which do not go through this datasource.)
+   *
+   * @param jdbcUrl the analytics JDBC URL.
+   * @throws IllegalStateException if the URL denotes an in-memory DuckDB database.
+   */
+  private void validateDuckDbUrl(String jdbcUrl) {
+    String prefix = "jdbc:duckdb:";
+    boolean fileBacked = false;
+    if (jdbcUrl != null && jdbcUrl.startsWith(prefix)) {
+      String file = jdbcUrl.substring(prefix.length());
+      fileBacked = !file.isBlank() && !file.startsWith(":");
+    }
+    if (!fileBacked) {
+      throw new IllegalStateException(
+          TextUtils.format(
+              "DuckDB analytics requires a file-backed database URL "
+                  + "(e.g. 'jdbc:duckdb:/path/to/analytics.duckdb'). In-memory databases are "
+                  + "private to a single connection and cannot be shared across the connection "
+                  + "pool. Configured URL: '{}'",
+              jdbcUrl));
+    }
   }
 }

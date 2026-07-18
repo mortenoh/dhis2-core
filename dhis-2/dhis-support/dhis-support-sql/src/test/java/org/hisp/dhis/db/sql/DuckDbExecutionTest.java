@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2024, University of Oslo
+ * Copyright (c) 2004-2026, University of Oslo
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -38,6 +38,8 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.Optional;
+import org.hisp.dhis.period.PeriodTypeEnum;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -94,6 +96,39 @@ class DuckDbExecutionTest {
       assertEquals(
           "pg.public.\"analytics_rs_periodstructure\"",
           sqlBuilder.qualifyTable("analytics_rs_periodstructure"));
+    }
+  }
+
+  /**
+   * Every period-bucket expression the analytics query planner can render must actually execute on
+   * DuckDB — string-comparison tests missed that the inherited PostgreSQL BI_MONTHLY expression
+   * used {@code /}, which is float division in DuckDB and fails {@code make_date} binding. Renders
+   * each supported period type and executes it, asserting the BI_MONTHLY bucket value.
+   */
+  @Test
+  void testPeriodBucketExpressionsExecute() throws Exception {
+    try (Connection connection = DriverManager.getConnection("jdbc:duckdb::memory:");
+        Statement statement = connection.createStatement()) {
+      statement.execute("create table dates (d timestamp)");
+      statement.execute("insert into dates values (timestamp '2024-04-15 10:30:00')");
+
+      for (PeriodTypeEnum periodType : PeriodTypeEnum.values()) {
+        Optional<String> expression = sqlBuilder.renderDateFieldPeriodBucketDate("d", periodType);
+        if (expression.isPresent()) {
+          try (ResultSet rs =
+              statement.executeQuery("select " + expression.get() + " from dates")) {
+            assertTrue(rs.next(), "period bucket must execute: " + periodType);
+          }
+        }
+      }
+
+      // April (month 4) falls in the Mar-Apr bi-month, which starts in March.
+      String biMonthly =
+          sqlBuilder.renderDateFieldPeriodBucketDate("d", PeriodTypeEnum.BI_MONTHLY).orElseThrow();
+      try (ResultSet rs = statement.executeQuery("select " + biMonthly + " from dates")) {
+        assertTrue(rs.next());
+        assertEquals("2024-03-01", rs.getDate(1).toString());
+      }
     }
   }
 

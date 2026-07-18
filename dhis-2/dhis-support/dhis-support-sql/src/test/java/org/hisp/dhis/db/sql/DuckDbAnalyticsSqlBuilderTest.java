@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2024, University of Oslo
+ * Copyright (c) 2004-2026, University of Oslo
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -33,6 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Optional;
 import org.hisp.dhis.db.model.Database;
 import org.hisp.dhis.period.PeriodTypeEnum;
 import org.junit.jupiter.api.Test;
@@ -88,13 +89,24 @@ class DuckDbAnalyticsSqlBuilderTest {
   }
 
   /**
-   * The period-bucket SQL is inherited verbatim from {@link PostgreSqlAnalyticsSqlBuilder}; assert
-   * DuckDB produces byte-identical output for every period type.
+   * The period-bucket SQL is inherited from {@link PostgreSqlAnalyticsSqlBuilder}, except
+   * BI_MONTHLY: its PostgreSQL form relies on integer {@code /}, which is float division in DuckDB
+   * and fails {@code make_date} binding, so DuckDB substitutes the {@code //} integer-division
+   * operator. Assert byte-identical output for every other period type, and the {@code //} rewrite
+   * for BI_MONTHLY. Executability of every expression is covered by {@code DuckDbExecutionTest}.
    */
   @ParameterizedTest
   @EnumSource(PeriodTypeEnum.class)
   void testPeriodBucketsInheritedFromPostgres(PeriodTypeEnum periodType) {
     String field = "ax.\"eventdate\"";
+    if (periodType == PeriodTypeEnum.BI_MONTHLY) {
+      assertEquals(
+          Optional.of(
+              "make_date( extract(year from ax.\"eventdate\")::int, "
+                  + "((extract(month from ax.\"eventdate\")::int - 1) // 2) * 2 + 1, 1 )"),
+          sqlBuilder.renderDateFieldPeriodBucketDate(field, periodType));
+      return;
+    }
     assertEquals(
         postgresBuilder.renderDateFieldPeriodBucketDate(field, periodType),
         sqlBuilder.renderDateFieldPeriodBucketDate(field, periodType));

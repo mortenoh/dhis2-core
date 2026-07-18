@@ -14,9 +14,12 @@ justified for large production deployments, but it makes the alternate-backend c
 expensive to exercise anywhere else.
 
 DuckDB fills that gap. It is an embedded, in-process columnar OLAP engine: a single JDBC
-dependency, no server, no daemon, no network. The database is one file (or `:memory:`). This
-gives DHIS2 a real columnar analytics engine that starts in milliseconds with zero
-infrastructure.
+dependency, no server, no daemon. The database is one file. This gives DHIS2 a real columnar
+analytics engine that starts in milliseconds with (almost) zero infrastructure — the one
+caveat is that the `postgres` extension used to read the transaction database is downloaded
+from the DuckDB extension repository on first use, so the first startup needs outbound
+network access and a writable extension directory (default `~/.duckdb`); pre-install the
+extension for air-gapped deployments.
 
 **This backend targets simplicity, not scale.** The intended uses are:
 
@@ -35,8 +38,11 @@ ClickHouse or Doris for that.
 What the branch adds (all analytics-side; the transaction database remains PostgreSQL):
 
 - `Database.DUCKDB` enum value, selected with `analytics.database = DUCKDB` in `dhis.conf`,
-  plus a JDBC URL such as `analytics.connection.url = jdbc:duckdb:/path/to/analytics.duckdb`
-  (or `jdbc:duckdb:` for in-memory).
+  plus a file-backed JDBC URL such as
+  `analytics.connection.url = jdbc:duckdb:/path/to/analytics.duckdb`. In-memory URLs are
+  rejected at startup: each in-memory JDBC connection owns a private database, so pooled
+  connections would each see a different, unrelated database. (In-memory remains useful for
+  single-connection unit tests, which do not go through the pool.)
 - `DuckDbSqlBuilder` — the general SQL dialect builder. DuckDB's SQL is largely
   PostgreSQL-compatible, so it extends `PostgreSqlBuilder` and overrides only what differs:
   regex matching (`regexp_matches(...)` instead of `~`), JSON extraction
@@ -95,8 +101,8 @@ Current standing of this backend, honestly stated:
   yields single unpartitioned tables per analytics table, populated without partition
   filters, swapped via multi-statement drop + rename, and queried through the main table —
   the same behavior as ClickHouse and Doris.
-- **Bugs found and fixed during the E2E run** (both invisible to unit tests; full
-  write-ups with root causes in [DUCKDB_BUGS.md](DUCKDB_BUGS.md)):
+- **Bugs found and fixed during the E2E run** (both invisible to unit tests; open issues
+  and operational caveats are tracked in [DUCKDB_BUGS.md](DUCKDB_BUGS.md)):
   1. `qualifyTable` originally kept `analytics*` names local, which silently broke resource
      table replication (`insert into local select from qualifyTable(name)` copied the empty
      local table into itself, leaving period-structure lookups empty and aborting the
@@ -136,8 +142,9 @@ Current standing of this backend, honestly stated:
 ### Pros
 
 - **Zero infrastructure**: no server to install or operate; the whole backend is the
-  `org.duckdb:duckdb_jdbc` dependency. Removes the biggest barrier to using a columnar
-  engine for small deployments and development.
+  `org.duckdb:duckdb_jdbc` dependency (plus the `postgres` extension, auto-downloaded on
+  first use). Removes the biggest barrier to using a columnar engine for small deployments
+  and development.
 - **Real columnar performance on one node**: vectorized execution, automatic statistics
   (no `ANALYZE`), zonemap pruning (no secondary indexes to build — analytics table
   generation skips the entire indexing phase).
@@ -177,7 +184,8 @@ analytics.database = DUCKDB
 analytics.connection.url = jdbc:duckdb:/var/lib/dhis2/analytics.duckdb
 ```
 
-Use `jdbc:duckdb:` (no path) for a transient in-memory analytics database. The PostgreSQL
+The URL must be file-backed — in-memory URLs (`jdbc:duckdb:` with no path) are rejected at
+startup because each pooled connection would get its own private database. The PostgreSQL
 connection settings (`connection.url`, `connection.username`, `connection.password`) are
 reused automatically to attach the transaction database read-only.
 
