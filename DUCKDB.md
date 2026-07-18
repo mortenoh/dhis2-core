@@ -201,6 +201,18 @@ database-file encryption (`ATTACH ... (ENCRYPTION_KEY ...)`) — at-rest encrypt
 analytics file via an optional `dhis.conf` key would be trivial to wire into the
 per-connection initializer.
 
+Worth tracking: the **Quack remote protocol** (announced 2026-05, nightly extension;
+first production release planned with DuckDB v2.0, fall 2026) turns a DuckDB instance into
+an HTTP server that other DuckDB instances attach to, with multiple concurrent writers
+across processes. It targets exactly this backend's structural cons — host contention,
+crash isolation, and the single-writer/single-node constraint — at the cost of the
+zero-infrastructure pitch and the in-process latency win. If it stabilizes, it would enable
+a deployment tier between embedded DuckDB and ClickHouse/Doris: several DHIS2 app nodes
+sharing one lightweight DuckDB analytics server, reusing this backend's dialect and
+qualification machinery (`ATTACH 'quack:host'` + `remote.`-qualified tables is structurally
+the same pattern as the existing `pg` attach). Not viable before the protocol is declared
+stable. See https://duckdb.org/2026/05/12/quack-remote-protocol.
+
 ## Benchmark (Sierra Leone demo database)
 
 Same host, same demo database, analytics cache disabled, identical query suite (medians of
