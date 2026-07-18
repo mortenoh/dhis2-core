@@ -252,7 +252,8 @@ public abstract class AbstractJdbcTableManager implements AnalyticsTableManager 
         // before the staging table is dropped, or the update's data is silently lost.
         // Deliberately not executeSilently: a failed append here must fail the update.
         jdbcTemplate.execute(
-            sqlBuilder.insertIntoSelectFrom(table.fromStaging(), sqlBuilder.quote(table.getName())));
+            sqlBuilder.insertIntoSelectFrom(
+                table.fromStaging(), sqlBuilder.quote(table.getName())));
       }
       dropTable(table);
     }

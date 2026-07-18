@@ -104,7 +104,9 @@ public class RelationshipTypeJoinGenerator {
       case PROGRAM_STAGE_INSTANCE ->
           sql + sqlBuilder.qualifyTable("event") + " ev2 on ev2.eventid = ri2.eventid";
       case PROGRAM_INSTANCE ->
-          sql + sqlBuilder.qualifyTable("enrollment") + " en2 on en2.enrollmentid = ri2.enrollmentid";
+          sql
+              + sqlBuilder.qualifyTable("enrollment")
+              + " en2 on en2.enrollmentid = ri2.enrollmentid";
     };
   }
 

@@ -147,9 +147,9 @@ public class DuckDbSqlBuilder extends PostgreSqlBuilder {
   /**
    * Local DuckDB tables live in schema {@code main} of the current database, not {@code public} —
    * the inherited PostgreSQL check ({@code table_schema = 'public'}) always returns empty, which
-   * silently breaks the "master table exists" decision during analytics table swaps. Restricting
-   * to {@code current_database()} keeps tables of the attached {@code pg} source database out of
-   * the result.
+   * silently breaks the "master table exists" decision during analytics table swaps. Restricting to
+   * {@code current_database()} keeps tables of the attached {@code pg} source database out of the
+   * result.
    */
   @Override
   public String tableExists(String name) {
@@ -200,8 +200,8 @@ public class DuckDbSqlBuilder extends PostgreSqlBuilder {
    * (wired via {@code ConnectionInitDataSource} rather than pool configuration, since the ATTACH
    * DSN embeds the source database credentials and pool implementations log their configuration at
    * DEBUG). DuckDB's ATTACH and {@code memory_limit} / {@code temp_directory} / {@code
-   * preserve_insertion_order} settings are connection/instance session state — not persisted to
-   * the {@code .duckdb} file — so a connection that did not run them fails queries against {@code
+   * preserve_insertion_order} settings are connection/instance session state — not persisted to the
+   * {@code .duckdb} file — so a connection that did not run them fails queries against {@code
    * pg.public."..."} with "schema pg does not exist". All statements are idempotent: {@code
    * install}/{@code load} are no-ops when already done, {@code attach} uses {@code if not exists}
    * (so it is safe when a shared in-process instance already has {@code pg}), and the {@code set}
