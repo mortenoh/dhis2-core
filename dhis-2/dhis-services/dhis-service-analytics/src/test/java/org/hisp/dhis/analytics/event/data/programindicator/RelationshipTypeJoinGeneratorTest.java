@@ -36,8 +36,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.Map;
 import org.apache.commons.text.StringSubstitutor;
-import org.hisp.dhis.program.AnalyticsType;
 import org.hisp.dhis.db.sql.PostgreSqlBuilder;
+import org.hisp.dhis.program.AnalyticsType;
 import org.hisp.dhis.relationship.RelationshipEntity;
 import org.hisp.dhis.relationship.RelationshipType;
 import org.hisp.dhis.test.random.BeanRandomizer;
@@ -73,7 +73,8 @@ class RelationshipTypeJoinGeneratorTest {
   private static final String ENROLLMENT_RELTO_JOIN =
       "left join \"enrollment\" en2 on en2.enrollmentid = ri2.enrollmentid";
 
-  private static final String EVENT_RELTO_JOIN = "left join \"event\" ev2 on ev2.eventid = ri2.eventid";
+  private static final String EVENT_RELTO_JOIN =
+      "left join \"event\" ev2 on ev2.eventid = ri2.eventid";
 
   private final BeanRandomizer rnd = BeanRandomizer.create();
 
@@ -188,7 +189,10 @@ class RelationshipTypeJoinGeneratorTest {
                 ? " and en2.uid = ax.enrollment )"
                 : " and ev2.uid = ax.event )"));
 
-    assertEquals(expected, RelationshipTypeJoinGenerator.generate(ALIAS, relationshipType, type, new PostgreSqlBuilder()));
+    assertEquals(
+        expected,
+        RelationshipTypeJoinGenerator.generate(
+            ALIAS, relationshipType, type, new PostgreSqlBuilder()));
   }
 
   private static String getFromRelationshipEntity(

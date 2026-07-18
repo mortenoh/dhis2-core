@@ -93,11 +93,11 @@ public class AnalyticsTablePartition extends Table {
   }
 
   /**
-   * Constructor. Sets the name to represent a staging table partition, carrying the given
-   * partition window. Used for databases with declarative partitioning, where the master staging
-   * table is populated directly (no physical partition tables) but the populate SQL must still be
-   * restricted to the partition window — critical for "latest" partial updates, whose window
-   * filter otherwise disappears and silently degrades the update to a full re-population.
+   * Constructor. Sets the name to represent a staging table partition, carrying the given partition
+   * window. Used for databases with declarative partitioning, where the master staging table is
+   * populated directly (no physical partition tables) but the populate SQL must still be restricted
+   * to the partition window — critical for "latest" partial updates, whose window filter otherwise
+   * disappears and silently degrades the update to a full re-population.
    *
    * @param table the master {@link AnalyticsTable} of this partition.
    * @param year the year which represents this partition, or null.

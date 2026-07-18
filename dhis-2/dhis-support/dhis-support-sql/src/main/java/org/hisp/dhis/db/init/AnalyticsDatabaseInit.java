@@ -121,12 +121,12 @@ public class AnalyticsDatabaseInit {
    * org.hisp.dhis.db.sql.DuckDbSqlBuilder#connectionInitSql}). Running it once here would only
    * initialize a single pooled connection, leaving others to fail with "schema pg does not exist".
    *
-   * <p>The probe below forces one pooled connection through that initializer so failures surface
-   * at startup with a clear cause instead of at the first analytics export. The most common
-   * failure is the {@code install postgres} step: the {@code postgres} extension is not bundled
-   * with the JDBC driver and is downloaded from the DuckDB extension repository on first use,
-   * which requires outbound network access and a writable extension directory (default {@code
-   * ~/.duckdb}). Pre-install the extension for air-gapped deployments.
+   * <p>The probe below forces one pooled connection through that initializer so failures surface at
+   * startup with a clear cause instead of at the first analytics export. The most common failure is
+   * the {@code install postgres} step: the {@code postgres} extension is not bundled with the JDBC
+   * driver and is downloaded from the DuckDB extension repository on first use, which requires
+   * outbound network access and a writable extension directory (default {@code ~/.duckdb}).
+   * Pre-install the extension for air-gapped deployments.
    */
   private void initDuckDb() {
     jdbcTemplate.execute("select 1");

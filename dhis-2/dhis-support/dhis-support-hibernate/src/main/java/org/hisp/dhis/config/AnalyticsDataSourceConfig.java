@@ -312,9 +312,9 @@ public class AnalyticsDataSourceConfig {
   }
 
   /**
-   * Rejects in-memory DuckDB URLs for the analytics datasource. Each in-memory JDBC connection
-   * owns its own private database, so behind a connection pool every pooled connection would see
-   * a different, unrelated database: tables created and populated through one connection are
+   * Rejects in-memory DuckDB URLs for the analytics datasource. Each in-memory JDBC connection owns
+   * its own private database, so behind a connection pool every pooled connection would see a
+   * different, unrelated database: tables created and populated through one connection are
    * invisible to queries running on another. Only a file-backed database gives all pooled
    * connections a shared view. (In-memory remains fine for single-connection use such as unit
    * tests, which do not go through this datasource.)
