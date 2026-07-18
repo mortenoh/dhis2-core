@@ -220,6 +220,54 @@ sub-second queries), but directionally: DuckDB's export is substantially faster 
 because columnar storage needs no index-building phase — and query latency is equal or
 better across the suite.
 
+## Near-real-time analytics (continuous analytics)
+
+The continuous analytics job gives near-real-time freshness without any architectural
+change: it performs incremental "latest" updates (delete rows updated since the last full
+update, re-populate only that window, append into the main tables) on a fixed-delay
+schedule, plus one full rebuild per day. On this branch the path is verified live on DuckDB
+(it was previously non-functional on every non-PostgreSQL backend — see git history): a
+latest run took ~19 s against the demo database versus ~74 s for a full rebuild.
+
+Setup — there is no default job; create one in the Scheduler app (job type "Continuous
+analytics table") or via the API:
+
+```json
+POST /api/jobConfigurations
+{
+  "name": "Continuous analytics",
+  "jobType": "CONTINUOUS_ANALYTICS_TABLE",
+  "delay": 300,
+  "jobParameters": { "fullUpdateHourOfDay": 3 }
+}
+```
+
+- `delay` — seconds between the *completion* of one run and the start of the next
+  (fixed-delay semantics: runs never overlap, a slow run self-throttles). With ~19 s runs
+  at demo scale, a 60–300 s delay is realistic.
+- `fullUpdateHourOfDay` — the daily hour at which the job performs a full rebuild instead
+  of a latest update, resetting the incremental window. The first-ever run is always full.
+- `skipOutliers` must match how the tables were built — the job checks that the `analytics`
+  table's outlier columns align with its parameters and refuses to run otherwise (this
+  check is dialect-aware as of this branch).
+- Disable the regular scheduled "Analytics table" job while the continuous job is active;
+  they operate on the same tables.
+
+Caching — two layers decide whether users actually *see* the fresh data:
+
+- The server-side analytics cache is invalidated at the end of every table update (full and
+  latest alike), so it self-corrects. Note the upstream `AnalyticsCache`/`Pager`
+  serialization bug (see `DUCKDB_BUGS.md`) before enabling server caching at all.
+- HTTP `Cache-Control` headers (driven by `keyCacheStrategy`) are honored by browsers and
+  any proxy/CDN independently of server-side invalidation — a `CACHE_1_HOUR` strategy
+  silently defeats a 1-minute refresh loop. Use `NO_CACHE`, or preferably **progressive
+  caching**, whose TTL scales with the age of the queried period: current-period queries
+  stay fresh while historical queries remain cheap.
+
+Caveat: consecutive latest runs between fulls are idempotent by construction (each run
+deletes and re-appends the whole since-last-full window) but only a single latest run per
+full cycle has been observed live so far.
+
 ## Configuration example
 
 ```properties
