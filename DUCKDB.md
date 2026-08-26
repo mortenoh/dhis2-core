@@ -137,10 +137,24 @@ Current standing of this backend, honestly stated:
   this.
 - **Caveats observed while testing** (not DuckDB-specific, but worth knowing):
   - An upstream bug in `AnalyticsCache` breaks *cached* event analytics responses on any
-    backend: grids holding a non-serializable `Pager` fail the serialization-based deep
-    clone, and the API degrades to an empty result. With the demo database (which enables
-    caching in system settings), set `keyCacheStrategy` to `NO_CACHE` or apply the upstream
-    fix before judging query results.
+    backend, PostgreSQL included. Symptom: `/api/analytics/events/aggregate/...` returns
+    HTTP 200 with an empty grid while the identical SQL returns rows when run directly
+    against the analytics database, and the log carries
+    `SerializationException: java.io.NotSerializableException: org.hisp.dhis.common.Pager`
+    from `AnalyticsCache.getGridClone`.
+
+    `AnalyticsCache` deep-clones grids with Java serialization
+    (`AnalyticsCache.getGridClone` → `SerializationUtils.clone`). `Grid` is `Serializable`
+    and its metadata map serializes with it, but event analytics puts a `Pager`/`SlimPager`
+    into that map whenever paging applies (`ResponseHelper`, `MetadataParamsHandler`), and
+    `org.hisp.dhis.common.Pager` implements nothing — so the clone throws and the response
+    degrades to an empty grid. Triggered whenever the analytics cache is enabled; the demo
+    database enables it via system settings.
+
+    Workaround: set `keyCacheStrategy` to `NO_CACHE` before judging query results. A fix
+    belongs upstream — make `Pager` serializable, or stop cloning grids through Java
+    serialization (preferable: serialization makes every object that ever lands in grid
+    metadata part of the cache's contract).
   - Analytics table swap errors are swallowed by `executeSilently` (upstream pattern). On an
     embedded engine with transactional catalog semantics, a swap racing a concurrent query
     could silently leave a stale table; watch the logs when diagnosing unexpected query
