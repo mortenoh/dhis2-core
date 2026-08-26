@@ -250,7 +250,7 @@ public class JdbcCompletenessTableManager extends AbstractJdbcTableManager {
 
     return partition.isLatestPartition()
         ? latestFilter
-        : emptyIfTrue(partitionFilter, sqlBuilder.supportsDeclarativePartitioning());
+        : emptyIfTrue(partitionFilter, !sqlBuilder.restrictPopulateToPartition());
   }
 
   private List<AnalyticsTableColumn> getColumns() {

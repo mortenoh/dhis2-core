@@ -182,6 +182,22 @@ public interface SqlBuilder {
   boolean supportsDeclarativePartitioning();
 
   /**
+   * Whether populate statements are restricted to one partition window, and therefore run once per
+   * window rather than once for the whole table.
+   *
+   * <p>Defaults to the inverse of {@link #supportsDeclarativePartitioning()}: databases with
+   * physical partition tables populate each in turn, while databases that partition declaratively
+   * populate the master table in a single statement. An embedded engine wants the former without
+   * the latter - one physical table, but bounded statements - because peak memory is otherwise
+   * proportional to the whole dataset rather than to one window.
+   *
+   * @return true if populate statements should be restricted to a partition window.
+   */
+  default boolean restrictPopulateToPartition() {
+    return !supportsDeclarativePartitioning();
+  }
+
+  /**
    * @return true if the DBMS supports table analysis.
    */
   boolean supportsAnalyze();

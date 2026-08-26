@@ -595,7 +595,7 @@ public class JdbcEventAnalyticsTableManager extends AbstractEventJdbcTableManage
 
     return partition.isLatestPartition()
         ? latestFilter
-        : emptyIfTrue(partitionFilter, sqlBuilder.supportsDeclarativePartitioning());
+        : emptyIfTrue(partitionFilter, !sqlBuilder.restrictPopulateToPartition());
   }
 
   /**

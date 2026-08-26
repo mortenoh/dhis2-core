@@ -235,7 +235,7 @@ public class JdbcValidationResultTableManager extends AbstractJdbcTableManager {
    */
   private String getPartitionClause(AnalyticsTablePartition partition) {
     String partitionFilter = format("and ps.year = {} ", partition.getYear());
-    return emptyIfTrue(partitionFilter, sqlBuilder.supportsDeclarativePartitioning());
+    return emptyIfTrue(partitionFilter, !sqlBuilder.restrictPopulateToPartition());
   }
 
   private List<AnalyticsTableColumn> getColumns() {

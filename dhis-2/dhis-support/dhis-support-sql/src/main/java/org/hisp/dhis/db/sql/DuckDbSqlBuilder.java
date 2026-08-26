@@ -116,6 +116,17 @@ public class DuckDbSqlBuilder extends PostgreSqlBuilder {
    * queried through the main table ({@code JdbcAnalyticsManager} skips partition routing when
    * declarative partitioning is supported) — the same behavior as ClickHouse and Doris.
    */
+  /**
+   * DuckDB keeps a single physical table per analytics table, but populates it one year window at a
+   * time. A single statement spanning every year is what exhausts the engine's memory budget on
+   * even a demo-sized database, since a vectorised engine's peak usage tracks the width and volume
+   * of the statement rather than the size of the final table.
+   */
+  @Override
+  public boolean restrictPopulateToPartition() {
+    return true;
+  }
+
   @Override
   public boolean supportsDeclarativePartitioning() {
     return true;
