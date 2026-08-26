@@ -149,13 +149,6 @@ Current standing of this backend, honestly stated:
     the `.duckdb.wal` file next to it. When inspecting a live instance's file with an
     external tool, copy both files or you will see a stale catalog (e.g. staging tables that
     were already renamed).
-  - `JdbcEventAnalyticsManager.getEventClusters(...)` emits PostGIS-only SQL (`ST_Extent`,
-    `ST_SnapToGrid`, `ST_Transform`, ...) without checking `supportsGeospatialData()`. On
-    DuckDB this is unreachable in practice — geospatial support is off, so analytics tables
-    carry no geometry columns and geometry-bearing queries cannot be composed — but the
-    method itself is unguarded, and the same exposure exists upstream for ClickHouse/Doris.
-    If map clustering ever becomes reachable on a non-PostGIS backend, guard the endpoint and
-    return an unsupported-feature error.
 
 ## Pros and cons
 
