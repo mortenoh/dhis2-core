@@ -51,7 +51,6 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.hisp.dhis.analytics.AnalyticsTableHookService;
 import org.hisp.dhis.analytics.AnalyticsTableType;
@@ -392,24 +391,23 @@ class JdbcAnalyticsTableManagerTest {
   void testGetOutliersJoinStatementDoesNotMatchScientificNotationLikeText() {
     String joinStatement = subject.getOutliersJoinStatement();
 
-    Matcher regexLiterals = Pattern.compile("~ '([^']+)'").matcher(joinStatement);
-    List<Pattern> valueRegexes = new ArrayList<>();
-    while (regexLiterals.find()) {
-      valueRegexes.add(Pattern.compile(regexLiterals.group(1)));
-    }
+    // The numeric value filter is emitted through the dialect builder, so assert on what the
+    // configured builder generates rather than on PostgreSQL regex operator syntax.
+    assertTrue(
+        joinStatement.contains(sqlBuilder.regexpMatch("dv1.value", ColumnRegex.NUMERIC_REGEXP)),
+        "expected to find dv1.value numeric regex in SQL");
 
-    assertFalse(valueRegexes.isEmpty(), "expected to find dv1.value numeric regex in SQL");
+    String regexLiteral = ColumnRegex.NUMERIC_REGEXP;
+    Pattern valueRegex = Pattern.compile(regexLiteral.substring(1, regexLiteral.length() - 1));
 
-    for (Pattern valueRegex : valueRegexes) {
-      assertFalse(
-          valueRegex.matcher("224E10000913").matches(),
-          "serial-number-like text must not be treated as numeric: " + valueRegex.pattern());
-      assertFalse(
-          valueRegex.matcher("46E-1309013").matches(),
-          "serial-number-like text must not be treated as numeric: " + valueRegex.pattern());
-      assertTrue(valueRegex.matcher("12.34").matches(), "genuine decimal values must still match");
-      assertTrue(valueRegex.matcher("-5").matches(), "genuine negative integers must still match");
-    }
+    assertFalse(
+        valueRegex.matcher("224E10000913").matches(),
+        "serial-number-like text must not be treated as numeric: " + valueRegex.pattern());
+    assertFalse(
+        valueRegex.matcher("46E-1309013").matches(),
+        "serial-number-like text must not be treated as numeric: " + valueRegex.pattern());
+    assertTrue(valueRegex.matcher("12.34").matches(), "genuine decimal values must still match");
+    assertTrue(valueRegex.matcher("-5").matches(), "genuine negative integers must still match");
   }
 
   @Test
@@ -422,7 +420,9 @@ class JdbcAnalyticsTableManagerTest {
 
     assertTrue(
         joinStatement.contains(
-            "inner join dataelement de1 on dv1.dataelementid = de1.dataelementid"),
+            "inner join "
+                + sqlBuilder.qualifyTable("dataelement")
+                + " de1 on dv1.dataelementid = de1.dataelementid"),
         "outlier stats subquery must join to dataelement to check valuetype");
     assertTrue(
         joinStatement.contains("de1.valuetype in ("),
