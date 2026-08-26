@@ -336,13 +336,41 @@ keeping the single physical table would bound it; see the follow-ups below.
 
 Spilling is not the problem: DuckDB creates `temp_directory` lazily on first use and a large
 aggregation under a 200 MB limit completes by spilling, verified directly against the pinned
-driver. The engine also defaults to one thread per core (12 on the benchmark host), and peak
-memory scales with thread count - `SET threads` is not currently part of the per-connection
-init.
+driver. Nor is thread count - the engine is cgroup-aware, defaulting to 4 threads under
+`--cpus=4` exactly as the JVM does, so an explicit `SET threads` would be a no-op here.
 
 Earlier hand-timed figures on this branch (93 s vs 661 s export, query latency "equal or
 better") came from an unconstrained laptop run and are superseded by the table above; the
 query half of that claim does not survive having a control group.
+
+
+### What the floor is made of, and what moved it
+
+Three changes on this branch, each measured in isolation against the harness above:
+
+| Change | Effect at a 5.7 GiB budget |
+|---|---|
+| Baseline | export aborts immediately, 9 of 12 items |
+| Populate one partition window at a time | aggregate tables build, event tables still fail |
+| Correlate the legend subquery instead of re-joining the event table | no change alone |
+| Serialise populate (engine cannot checkpoint under concurrent writers) | **19 of 20 items build** |
+
+What remains is a single table, `analytics_event_wsgab5xwj3y`: 171 columns carrying 176
+`json_extract_string` calls, each re-parsing the same `eventdatavalues` blob for the same
+row. It still fails at an 8.25 GiB budget, so the overall floor for a complete Sierra Leone
+export is now set by that one statement rather than by the export as a whole - everything
+else fits in 5.7 GiB.
+
+Two hypotheses were tested and rejected along the way, both worth recording so they are not
+re-tried: the query plan is clean (all hash joins, a 358k row scan filtered to ~545 rows, no
+cross product), and the locally replicated resource tables are correctly sized, identical to
+their PostgreSQL counterparts.
+
+Collapsing those 176 extractions into a single parse per row is the remaining work. DuckDB
+can extract many paths in one call, but the column expressions are generated independently in
+`JdbcEventAnalyticsTableManager`, so batching them is a structural change to shared column
+generation rather than a dialect override - deliberately not attempted on the strength of a
+timing difference alone.
 
 ## Near-real-time analytics (continuous analytics)
 
