@@ -241,7 +241,10 @@ public class DefaultAnalyticsTableService implements AnalyticsTableService {
       AnalyticsTableUpdateParams params,
       List<AnalyticsTablePartition> partitions,
       JobProgress progress) {
-    int parallelism = Math.min(getParallelJobs(), partitions.size());
+    int parallelism =
+        sqlBuilder.supportsConcurrentPopulate()
+            ? Math.min(getParallelJobs(), partitions.size())
+            : 1;
     log.info("Populate table task number: " + parallelism);
 
     progress.runStageInParallel(

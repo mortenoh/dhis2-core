@@ -127,6 +127,12 @@ public class DuckDbSqlBuilder extends PostgreSqlBuilder {
     return true;
   }
 
+  /** Embedded single-file engine: concurrent writers block checkpointing. See the interface. */
+  @Override
+  public boolean supportsConcurrentPopulate() {
+    return false;
+  }
+
   @Override
   public boolean supportsDeclarativePartitioning() {
     return true;

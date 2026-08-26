@@ -198,6 +198,20 @@ public interface SqlBuilder {
   }
 
   /**
+   * Whether the database tolerates several populate statements writing concurrently.
+   *
+   * <p>Server-based backends do. An embedded engine writing to a single file does not checkpoint
+   * while any write transaction is open, so overlapping populates keep dirty blocks pinned in
+   * memory and the write-ahead log grows until the memory budget is exhausted - observed as "Failed
+   * to create checkpoint" followed by an out-of-memory abort.
+   *
+   * @return true if populate statements may run concurrently.
+   */
+  default boolean supportsConcurrentPopulate() {
+    return true;
+  }
+
+  /**
    * @return true if the DBMS supports table analysis.
    */
   boolean supportsAnalyze();
