@@ -30,146 +30,41 @@
 package org.hisp.dhis.db.sql;
 
 import java.util.Optional;
-import org.hisp.dhis.db.model.Database;
-import org.hisp.dhis.db.model.Index;
 import org.hisp.dhis.period.PeriodTypeEnum;
 
 /**
  * Implementation of {@link AnalyticsSqlBuilder} for DuckDB.
  *
- * <p>Extends {@link PostgreSqlAnalyticsSqlBuilder} (not {@link DuckDbSqlBuilder}) so the large
- * PostgreSQL period-bucket block in {@code renderDateFieldPeriodBucketDate(...)} plus {@code
- * renderTimestamp} / {@code castAsDate} / {@code nullIfEmpty} are inherited — DuckDB accepts that
- * SQL, except the {@code BI_MONTHLY} bucket which relies on PostgreSQL integer division and is
- * overridden here. The handful of DuckDB-divergent base methods are re-applied here (they mirror
- * {@link DuckDbSqlBuilder}; Java single inheritance makes the duplication hard to avoid without
- * refactoring the base classes).
+ * <p>Extends {@link DuckDbSqlBuilder} so the dialect divergences (source qualification, regex, JSON
+ * extraction, capability flags) are inherited rather than restated, matching how {@link
+ * ClickHouseAnalyticsSqlBuilder} and {@link DorisAnalyticsSqlBuilder} are built.
+ *
+ * <p>The PostgreSQL period-bucket SQL is reached through a delegate instead of a superclass: DuckDB
+ * accepts all of it except the {@code BI_MONTHLY} bucket (overridden below), and the block is pure
+ * string formatting with no state, so delegating is equivalent to inheriting it. Java single
+ * inheritance allows only one of the two parents, and inheriting the dialect is what keeps this
+ * class small.
  *
  * <p>See {@link DuckDbSqlBuilder} for this backend's intended use — testing/CI, local development,
  * and small/single-node databases rather than large or clustered production analytics.
  */
-public class DuckDbAnalyticsSqlBuilder extends PostgreSqlAnalyticsSqlBuilder {
+public class DuckDbAnalyticsSqlBuilder extends DuckDbSqlBuilder implements AnalyticsSqlBuilder {
 
-  public static final String SOURCE_ALIAS = "pg";
+  /** Supplies the period-bucket expressions DuckDB shares with PostgreSQL. See class javadoc. */
+  private final PostgreSqlAnalyticsSqlBuilder postgres = new PostgreSqlAnalyticsSqlBuilder();
 
-  // --- same DuckDB base overrides as DuckDbSqlBuilder (single-inheritance duplication) ---
-
+  /** DuckDB renders timestamps exactly as PostgreSQL does — the literal is passed through. */
   @Override
-  public Database getDatabase() {
-    return Database.DUCKDB;
-  }
-
-  @Override
-  public boolean isHighPerformance() {
-    return true;
-  }
-
-  @Override
-  public boolean supportsAnalyze() {
-    return false;
-  }
-
-  @Override
-  public boolean supportsVacuum() {
-    return false;
-  }
-
-  /** DuckDB has no logged/unlogged distinction; emit plain {@code create table}. */
-  @Override
-  public boolean supportsUnloggedTables() {
-    return false;
-  }
-
-  @Override
-  public boolean requiresIndexesForAnalytics() {
-    return false;
-  }
-
-  @Override
-  public boolean supportsGeospatialData() {
-    return false;
-  }
-
-  @Override
-  public boolean supportsDeclarativePartitioning() {
-    return true;
-  }
-
-  @Override
-  public String dataTypeJson() {
-    return "JSON";
-  }
-
-  @Override
-  public String dataTypeGeometry() {
-    return "VARCHAR";
-  }
-
-  @Override
-  public String dataTypeGeometryPoint() {
-    return "VARCHAR";
-  }
-
-  @Override
-  public String createIndex(Index index) {
-    return notSupported();
+  public String renderTimestamp(String timestampAsString) {
+    return timestampAsString;
   }
 
   /**
-   * Qualifies a table as a source table in the attached, read-only PostgreSQL database {@code pg},
-   * unconditionally — generated tables owned by the analytics database are referenced with {@link
-   * #quote(String)}. See {@link DuckDbSqlBuilder#qualifyTable(String)}.
-   */
-  @Override
-  public String qualifyTable(String name) {
-    return String.format("%s.public.%s", SOURCE_ALIAS, quote(name));
-  }
-
-  /** Local tables live in schema {@code main}; see {@link DuckDbSqlBuilder#tableExists}. */
-  @Override
-  public String tableExists(String name) {
-    return String.format(
-        """
-        select t.table_name from information_schema.tables t \
-        where t.table_catalog = current_database() \
-        and t.table_schema = 'main' and t.table_name = %s;""",
-        singleQuote(name));
-  }
-
-  /** Local tables live in schema {@code main}; see {@link DuckDbSqlBuilder#tableColumns}. */
-  @Override
-  public String tableColumns(String name) {
-    return String.format(
-        """
-        select c.column_name from information_schema.columns c \
-        where c.table_catalog = current_database() \
-        and c.table_schema = 'main' and c.table_name = %s;""",
-        singleQuote(name));
-  }
-
-  /** DuckDB uses regexp_matches(...) rather than the Postgres {@code ~} / {@code ~*} operators. */
-  @Override
-  public String regexpMatch(String value, String pattern) {
-    return String.format("regexp_matches(%s, %s)", value, pattern);
-  }
-
-  /** DuckDB JSON extraction: {@code json_extract_string(json, '$.path')} instead of ->> / #>>. */
-  @Override
-  public String jsonExtract(String json, String property) {
-    return String.format("json_extract_string(%s, '$.%s')", json, property);
-  }
-
-  @Override
-  public String jsonExtract(String json, String key, String property) {
-    return String.format("json_extract_string(%s, '$.%s.%s')", json, key, property);
-  }
-
-  /**
-   * PostgreSQL's {@code /} on integers truncates, so the inherited BI_MONTHLY expression relies on
-   * {@code (month - 1) / 2} being integral. DuckDB's {@code /} always yields DOUBLE, which {@code
+   * PostgreSQL's {@code /} on integers truncates, so its BI_MONTHLY expression relies on {@code
+   * (month - 1) / 2} being integral. DuckDB's {@code /} always yields DOUBLE, which {@code
    * make_date(int, ..., int)} rejects with a binder error; DuckDB's integer division operator is
-   * {@code //}. All other inherited period-bucket expressions execute unchanged on DuckDB (covered
-   * by {@code DuckDbExecutionTest}).
+   * {@code //}. Every other period-bucket expression executes unchanged on DuckDB and is taken from
+   * the PostgreSQL builder (covered by {@code DuckDbExecutionTest}).
    */
   @Override
   public Optional<String> renderDateFieldPeriodBucketDate(
@@ -179,7 +74,7 @@ public class DuckDbAnalyticsSqlBuilder extends PostgreSqlAnalyticsSqlBuilder {
           "make_date( extract(year from %1$s)::int, ((extract(month from %1$s)::int - 1) // 2) * 2 + 1, 1 )"
               .formatted(dateColumn));
     }
-    return super.renderDateFieldPeriodBucketDate(dateColumn, periodType);
+    return postgres.renderDateFieldPeriodBucketDate(dateColumn, periodType);
   }
 
   /**

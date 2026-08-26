@@ -131,10 +131,13 @@ Current standing of this backend, honestly stated:
   are wired with `analyticsPostgresJdbcTemplate` and `postgresSqlBuilder` regardless of the
   configured analytics database (this applies equally to ClickHouse/Doris), so TE tables and
   queries do not exercise DuckDB at all.
-- **Known duplication**: `DuckDbAnalyticsSqlBuilder` re-applies the base dialect overrides
-  from `DuckDbSqlBuilder` because Java single inheritance prevents extending both
-  `PostgreSqlAnalyticsSqlBuilder` and `DuckDbSqlBuilder`; a base-class refactor would remove
-  this.
+- **Builder hierarchy**: `DuckDbAnalyticsSqlBuilder` extends `DuckDbSqlBuilder` and implements
+  `AnalyticsSqlBuilder`, the same shape as the ClickHouse and Doris analytics builders, so the
+  dialect divergences are inherited rather than restated. Java single inheritance means the
+  PostgreSQL period-bucket SQL cannot also be inherited; it is reached through a
+  `PostgreSqlAnalyticsSqlBuilder` delegate, which is equivalent because that block is stateless
+  string formatting. DuckDB overrides only the `BI_MONTHLY` bucket (PostgreSQL's `/` truncates
+  on integers, DuckDB's yields a DOUBLE that `make_date` rejects; `//` is its integer division).
 - **Caveats observed while testing** (not DuckDB-specific, but worth knowing):
   - An upstream bug in `AnalyticsCache` breaks *cached* event analytics responses on any
     backend, PostgreSQL included. Symptom: `/api/analytics/events/aggregate/...` returns
