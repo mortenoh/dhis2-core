@@ -138,6 +138,15 @@ Current standing of this backend, honestly stated:
   `PostgreSqlAnalyticsSqlBuilder` delegate, which is equivalent because that block is stateless
   string formatting. DuckDB overrides only the `BI_MONTHLY` bucket (PostgreSQL's `/` truncates
   on integers, DuckDB's yields a DOUBLE that `make_date` rejects; `//` is its integer division).
+
+  Follow-up (deliberately not done here): moving that period-bucket block out of
+  `PostgreSqlAnalyticsSqlBuilder` into a helper both analytics builders call removes the
+  delegate entirely. It was implemented and verified as pure movement — the SQL unchanged,
+  `PostgreSqlAnalyticsSqlBuilder` 109 lines lighter, its method reduced to a one-line call,
+  all 238 `dhis-support-sql` and 2103 `dhis-service-analytics` tests green — then dropped,
+  because it is the only change that would edit shared PostgreSQL code for a reason unrelated
+  to adding a backend. Worth doing as a standalone upstream cleanup rather than inside this
+  branch.
 - **Caveats observed while testing** (not DuckDB-specific, but worth knowing):
   - An upstream bug in `AnalyticsCache` breaks *cached* event analytics responses on any
     backend, PostgreSQL included. Symptom: `/api/analytics/events/aggregate/...` returns
