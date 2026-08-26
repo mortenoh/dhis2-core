@@ -189,8 +189,8 @@ Current standing of this backend, honestly stated:
   ClickHouse in particular is built for high concurrent query volume.
 - **Experimental**: no production track record in DHIS2 yet (though validated end-to-end
   against the demo database, see standing above), and the JDBC driver + extension ecosystem
-  moves fast (pinned to `duckdb_jdbc` 1.5.4.0 — the latest release, engine v1.5.4, as of
-  2026-06-17).
+  moves fast (pinned to `duckdb_jdbc` 1.5.5.1 — the latest release, engine v1.5.5, as of
+  2026-08-26).
 - **Crash isolation**: an engine fault in an embedded database takes down the JVM with it,
   unlike a separate server process.
 
