@@ -115,8 +115,7 @@ Current standing of this backend, honestly stated:
   yields single unpartitioned tables per analytics table, populated without partition
   filters, swapped via multi-statement drop + rename, and queried through the main table —
   the same behavior as ClickHouse and Doris.
-- **Bugs found and fixed during the E2E run** (both invisible to unit tests; open issues
-  and operational caveats are tracked in [DUCKDB_BUGS.md](DUCKDB_BUGS.md)):
+- **Bugs found and fixed during the E2E run** (both invisible to unit tests):
   1. `qualifyTable` originally kept `analytics*` names local, which silently broke resource
      table replication (`insert into local select from qualifyTable(name)` copied the empty
      local table into itself, leaving period-structure lookups empty and aborting the
@@ -150,6 +149,13 @@ Current standing of this backend, honestly stated:
     the `.duckdb.wal` file next to it. When inspecting a live instance's file with an
     external tool, copy both files or you will see a stale catalog (e.g. staging tables that
     were already renamed).
+  - `JdbcEventAnalyticsManager.getEventClusters(...)` emits PostGIS-only SQL (`ST_Extent`,
+    `ST_SnapToGrid`, `ST_Transform`, ...) without checking `supportsGeospatialData()`. On
+    DuckDB this is unreachable in practice — geospatial support is off, so analytics tables
+    carry no geometry columns and geometry-bearing queries cannot be composed — but the
+    method itself is unguarded, and the same exposure exists upstream for ClickHouse/Doris.
+    If map clustering ever becomes reachable on a non-PostGIS backend, guard the endpoint and
+    return an unsupported-feature error.
 
 ## Pros and cons
 
@@ -295,7 +301,8 @@ Caching — two layers decide whether users actually *see* the fresh data:
 
 - The server-side analytics cache is invalidated at the end of every table update (full and
   latest alike), so it self-corrects. Note the upstream `AnalyticsCache`/`Pager`
-  serialization bug (see `DUCKDB_BUGS.md`) before enabling server caching at all.
+  serialization bug (see the caveats under "Standing vs. the other backends") before
+  enabling server caching at all.
 - HTTP `Cache-Control` headers (driven by `keyCacheStrategy`) are honored by browsers and
   any proxy/CDN independently of server-side invalidation — a `CACHE_1_HOUR` strategy
   silently defeats a 1-minute refresh loop. Use `NO_CACHE`, or preferably **progressive
