@@ -1,0 +1,17 @@
+# PostgreSQL-analytics counterpart to compose.duckdb.yml: same container limit
+# and heap, so an A/B against the DuckDB backend compares backends rather than
+# memory budgets. Use it with the default dhis.conf.
+#
+# WEB_MEM / WEB_HEAP override the container limit and JVM heap (defaults 11gb / 3000m);
+# set them to the same values as the DuckDB run being compared against.
+#
+# Usage: WEB_MEM=20gb WEB_HEAP=4000 COMPOSE_EXTRA_FILE=docker/compose.pg-baseline.yml \
+#        ./run-simulation.sh
+services:
+  web:
+    mem_limit: ${WEB_MEM:-11gb}
+    environment:
+      JAVA_TOOL_OPTIONS:
+        "-Dlog4j2.configurationFile=/opt/dhis2/log4j2.xml \
+        -Xmx${WEB_HEAP:-3000}m -Xms${WEB_HEAP:-3000}m \
+        -Xlog:async -Xlog:gc*,safepoint:file=/tmp/gc.log:time,uptime,level,tags"

@@ -240,48 +240,109 @@ stable. See https://duckdb.org/2026/05/12/quack-remote-protocol.
 
 ## Benchmark (Sierra Leone demo database)
 
-Same host, same demo database, analytics cache disabled, identical query suite (medians of
-7 runs after warmup); PostgreSQL 16 in Docker with default configuration (untuned), DuckDB
-embedded in the DHIS2 JVM. Row counts were identical across backends for every query.
+Run through the repo's own Gatling harness (`dhis-2/dhis-test-performance`) so the numbers
+are reproducible rather than hand-timed. Both sides use the same image built from this
+branch, the same Sierra Leone dump, and the same container limits; the backend is switched
+with `DHIS_CONF_FILE`:
 
-| Measure | DuckDB | PostgreSQL |
-|---|---|---|
-| Full analytics export (first run) | 93 s | 661 s |
-| Full analytics export (repeat) | 78 s | 138 s |
-| Aggregate, national, 12 months (24 rows) | 0.19 s | 0.20 s |
-| Aggregate, chiefdom level, 4 quarters (597 rows) | 0.19 s | 0.21 s |
-| Event aggregate, district level, 12 months (156 rows) | 0.10 s | 0.13 s |
-| Event query, page of 100 | 0.10 s | 0.13 s |
-| Enrollment query, page of 100 | 0.10 s | 0.10 s |
-| Program indicators, district level (312 rows) | 0.10 s | 0.18 s |
+```sh
+cd dhis-2 && ./build-dev.sh                       # dhis2/core-dev:local from this branch
+cd dhis-test-performance
 
-Take with the usual caveats (demo-scale data, untuned PostgreSQL, HTTP overhead dominating
-sub-second queries), but directionally: DuckDB's export is substantially faster — largely
-because columnar storage needs no index-building phase — and query latency is equal or
-better across the suite.
+# PostgreSQL analytics
+WEB_MEM=20gb WEB_HEAP=4000 DHIS2_IMAGE=dhis2/core-dev:local DB_TYPE=sierra-leone \
+COMPOSE_EXTRA_FILE=docker/compose.pg-baseline.yml ANALYTICS_GENERATE=true \
+SIMULATION_CLASS=org.hisp.dhis.test.analytics.SierraLeoneSimulationsRunner ./run-simulation.sh
 
-### Where the performance comes from — and where it goes away
+# DuckDB analytics
+WEB_MEM=20gb WEB_HEAP=4000 DHIS2_IMAGE=dhis2/core-dev:local DB_TYPE=sierra-leone \
+DHIS_CONF_FILE=dhis-duckdb.conf COMPOSE_EXTRA_FILE=docker/compose.duckdb.yml \
+ANALYTICS_GENERATE=true \
+SIMULATION_CLASS=org.hisp.dhis.test.analytics.SierraLeoneSimulationsRunner ./run-simulation.sh
+```
 
-- **Export**: DuckDB skips work the other backends must do — no secondary indexes (Postgres
-  spends a large share of its export building hundreds of them), no vacuum/analyze phase,
-  and append-friendly columnar writes. Versus ClickHouse/Doris (also columnar) the win is
-  smaller and comes mainly from not paying a network hop per ingested row.
-- **Small queries**: DuckDB runs *in-process* — no network round trip, no wire
-  serialization. Dashboards issue many small queries where per-query overhead dominates,
-  which is why the suite above shows equal-or-better latency. ClickHouse/Doris pay the
-  network tax on every query and only pull ahead when individual queries are heavy enough
-  for distributed execution to matter.
-- **Where it degrades**: the engine shares the host with the JVM, so a heavy export or
-  aggregation competes with the web application itself (invisible in single-user benchmarks
-  like the one above); many concurrent users contend within one process and one memory
-  budget; and aggregations beyond the memory cap spill to disk — graceful, but a query that
-  is fast on a dedicated 256 GB ClickHouse node may crawl on a shared 16 GB app server.
+### Analytics table export
 
-In short, the crossover to ClickHouse/Doris is driven by three distinct kinds of scale —
-data volume (single-node ceiling), concurrent users (process-level contention), and
-operations (HA, isolation, separate failure domains) — not by DuckDB's query engine running
-out of steam first. Where none of those pressures apply, DuckDB is not a compromise; it is
-likely the fastest option available while also being the cheapest to operate.
+Matched at a 20 GB container with a 4 GB JVM heap, leaving DuckDB a 12 GiB engine budget:
+
+| Backend | Export |
+|---|---|
+| PostgreSQL | 3 min 19.7 s |
+| DuckDB | **48.2 s** |
+
+Most of the gap is work DuckDB never does: the PostgreSQL run built **748 indexes**, while
+the columnar backend builds none. Index count scales with programs and data elements rather
+than with row count, so this gap is not a function of dataset size.
+
+### Query latency: unresolved
+
+The suite's 26 Sierra Leone simulations include 19 tracked-entity queries, and tracked-entity
+analytics runs on PostgreSQL regardless of the configured backend — so those 19 are a control
+group doing byte-identical work on both sides. In a single run per backend (5 users ramped
+over 40 s):
+
+| Group | Mean p95 change, DuckDB vs PostgreSQL |
+|---|---|
+| 7 backend-relevant queries | +29.0% |
+| 19 tracked-entity control | +35.2% |
+
+The control moved further than the treatment, so the difference is run-to-run variance, not
+the backend. **No query-latency conclusion can be drawn from single runs on this harness**;
+the measured noise floor (~35%) swamps any plausible backend effect. Resolving it needs
+repeated alternating runs with the control used as the noise estimate. Query latency matters
+more than export time for users, so this is the gap worth closing before the backend is
+judged on performance.
+
+### Memory floor: DuckDB needs a large engine budget even on the demo database
+
+DuckDB caps itself at `(container limit - JVM max heap) * 0.75`. Sierra Leone exports fail
+outright below roughly 12 GiB:
+
+| Container | Heap | Engine budget | Export |
+|---|---|---|---|
+| 16 GB | 10 GB | 4.3 GiB | Out of Memory, whole export aborts |
+| 11 GB | 3 GB | 5.7 GiB | Out of Memory, whole export aborts |
+| 11 GB | 3 GB | 5.7 GiB | Out of Memory with export parallelism forced to 1 |
+| 20 GB | 4 GB | 12 GiB | completes in 48 s |
+
+PostgreSQL completed the same export at both 16 GB/10 GB (3 min 21 s) and 11 GB/3 GB
+(3 min 29 s), so the container was not simply too small for any backend - its analytics work
+happens in the database container, which was untouched.
+
+The third row is the important one. With `keyParallelJobsInAnalyticsTableExport = 1`, a
+**single** `insert ... select` exhausts 5.7 GiB: the populate of a 171-column event analytics
+table carrying 176 `json_extract_string` calls, on a dataset with trivial row counts.
+`preserve_insertion_order = false` is already set. So the constraint is **table width, not
+data volume** - a vectorised engine materialises columns x vector size x threads, and width
+is driven by data elements per program stage, category columns, and org-unit hierarchy
+depth. Width is uncorrelated with instance size: a small pilot with one richly instrumented
+program can hit this while a large aggregate-only instance never does.
+
+This also explains why the earlier laptop validation saw all 11 table types build - outside a
+container the cap resolves to `(host RAM - heap) * 0.75`, tens of GB. The practical
+consequence is that **the memory does not disappear, it moves into the DHIS2 container**:
+DuckDB removes the analytics workload from the PostgreSQL server, but the app container must
+then be provisioned for it.
+
+The floor is not intrinsic to DuckDB - it follows from how this branch populates tables.
+`DefaultAnalyticsTableService.getTablePartitions` returns one fake partition covering the
+whole master table when `supportsDeclarativePartitioning()` is true, and
+`getPartitionClause` drops the year-range filter for the same reason
+(`emptyIfTrue(partitionFilter, sqlBuilder.supportsDeclarativePartitioning())`). So DuckDB
+runs a **single** `insert ... select` spanning every year of data per table type, where
+PostgreSQL runs one bounded statement per year partition. Peak memory is therefore
+proportional to the entire dataset rather than to one year. Populating per year window while
+keeping the single physical table would bound it; see the follow-ups below.
+
+Spilling is not the problem: DuckDB creates `temp_directory` lazily on first use and a large
+aggregation under a 200 MB limit completes by spilling, verified directly against the pinned
+driver. The engine also defaults to one thread per core (12 on the benchmark host), and peak
+memory scales with thread count - `SET threads` is not currently part of the per-connection
+init.
+
+Earlier hand-timed figures on this branch (93 s vs 661 s export, query latency "equal or
+better") came from an unconstrained laptop run and are superseded by the table above; the
+query half of that claim does not survive having a control group.
 
 ## Near-real-time analytics (continuous analytics)
 
