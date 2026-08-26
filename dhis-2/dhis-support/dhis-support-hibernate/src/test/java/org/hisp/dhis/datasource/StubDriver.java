@@ -43,6 +43,14 @@ import java.util.logging.Logger;
 public class StubDriver implements Driver {
   @Override
   public Connection connect(String s, Properties properties) throws SQLException {
+    // DriverManager tries every registered driver in turn and relies on connect() returning null
+    // for URLs a driver does not handle. Without this check, this stub hijacks every connection
+    // request in the JVM once registered - including those of real drivers in tests that run
+    // concurrently - and hands back a mock whose statements execute nothing and return null.
+    if (!acceptsURL(s)) {
+      return null;
+    }
+
     Statement mockStatement = mock(Statement.class);
     Connection mockConnection = mock(Connection.class);
     given(mockConnection.createStatement()).willReturn(mockStatement);
