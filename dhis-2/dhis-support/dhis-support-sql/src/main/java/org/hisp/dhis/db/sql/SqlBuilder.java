@@ -182,6 +182,36 @@ public interface SqlBuilder {
   boolean supportsDeclarativePartitioning();
 
   /**
+   * Whether populate statements are restricted to one partition window, and therefore run once per
+   * window rather than once for the whole table.
+   *
+   * <p>Defaults to the inverse of {@link #supportsDeclarativePartitioning()}: databases with
+   * physical partition tables populate each in turn, while databases that partition declaratively
+   * populate the master table in a single statement. An embedded engine wants the former without
+   * the latter - one physical table, but bounded statements - because peak memory is otherwise
+   * proportional to the whole dataset rather than to one window.
+   *
+   * @return true if populate statements should be restricted to a partition window.
+   */
+  default boolean restrictPopulateToPartition() {
+    return !supportsDeclarativePartitioning();
+  }
+
+  /**
+   * Whether the database tolerates several populate statements writing concurrently.
+   *
+   * <p>Server-based backends do. An embedded engine writing to a single file does not checkpoint
+   * while any write transaction is open, so overlapping populates keep dirty blocks pinned in
+   * memory and the write-ahead log grows until the memory budget is exhausted - observed as "Failed
+   * to create checkpoint" followed by an out-of-memory abort.
+   *
+   * @return true if populate statements may run concurrently.
+   */
+  default boolean supportsConcurrentPopulate() {
+    return true;
+  }
+
+  /**
    * @return true if the DBMS supports table analysis.
    */
   boolean supportsAnalyze();
@@ -190,6 +220,15 @@ public interface SqlBuilder {
    * @return true if the DBMS supports table vacuuming.
    */
   boolean supportsVacuum();
+
+  /**
+   * @return true if the DBMS supports {@code unlogged} tables (a PostgreSQL crash-unsafe table
+   *     optimization). Backends without the concept return false so {@code createTable} omits the
+   *     modifier rather than relying on the engine tolerating it.
+   */
+  default boolean supportsUnloggedTables() {
+    return true;
+  }
 
   /**
    * @return true if the DBMS supports correlated subqueries.
@@ -537,6 +576,13 @@ public interface SqlBuilder {
    *     the table exists.
    */
   String tableExists(String name);
+
+  /**
+   * @param name the table name.
+   * @return a statement which will return one row per column of the given table, with a single
+   *     column holding the column name; no rows if the table does not exist.
+   */
+  String tableColumns(String name);
 
   /**
    * @param table the {@link Table}.

@@ -241,7 +241,10 @@ public class DefaultAnalyticsTableService implements AnalyticsTableService {
       AnalyticsTableUpdateParams params,
       List<AnalyticsTablePartition> partitions,
       JobProgress progress) {
-    int parallelism = Math.min(getParallelJobs(), partitions.size());
+    int parallelism =
+        sqlBuilder.supportsConcurrentPopulate()
+            ? Math.min(getParallelJobs(), partitions.size())
+            : 1;
     log.info("Populate table task number: " + parallelism);
 
     progress.runStageInParallel(
@@ -353,6 +356,27 @@ public class DefaultAnalyticsTableService implements AnalyticsTableService {
     for (AnalyticsTable table : tables) {
       if (table.hasTablePartitions() && !sqlBuilder.supportsDeclarativePartitioning()) {
         partitions.addAll(table.getTablePartitions());
+      } else if (table.hasTablePartitions()
+          && sqlBuilder.restrictPopulateToPartition()
+          && table.getLatestTablePartition() == null) {
+        // Declarative partitioning with bounded populates: no physical partition tables, but one
+        // populate per year window rather than a single statement spanning the whole dataset.
+        // Every fake partition names the master staging table, so the windows append into it.
+        table
+            .getTablePartitions()
+            .forEach(
+                part ->
+                    partitions.add(
+                        new AnalyticsTablePartition(
+                            table, part.getYear(), part.getStartDate(), part.getEndDate())));
+      } else if (table.getLatestTablePartition() != null) {
+        // Fake partition representing the master table, carrying the latest partition's window
+        // so the populate SQL keeps its incremental filter (databases with declarative
+        // partitioning populate the master staging table directly)
+        AnalyticsTablePartition latest = table.getLatestTablePartition();
+        partitions.add(
+            new AnalyticsTablePartition(
+                table, latest.getYear(), latest.getStartDate(), latest.getEndDate()));
       } else {
         // Fake partition representing the master table
         partitions.add(new AnalyticsTablePartition(table));

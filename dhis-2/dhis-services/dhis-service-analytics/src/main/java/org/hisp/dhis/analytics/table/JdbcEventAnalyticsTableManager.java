@@ -44,7 +44,6 @@ import static org.hisp.dhis.commons.util.TextUtils.format;
 import static org.hisp.dhis.commons.util.TextUtils.replace;
 import static org.hisp.dhis.db.model.DataType.CHARACTER_11;
 import static org.hisp.dhis.db.model.DataType.INTEGER;
-import static org.hisp.dhis.program.ProgramType.WITHOUT_REGISTRATION;
 import static org.hisp.dhis.system.util.MathUtils.NUMERIC_LENIENT_REGEXP;
 import static org.hisp.dhis.util.DateUtils.toLongDate;
 import static org.hisp.dhis.util.DateUtils.toMediumDate;
@@ -378,7 +377,7 @@ public class JdbcEventAnalyticsTableManager extends AbstractEventJdbcTableManage
                     and ev.lastupdated >= '${startDate}' \
                     and ev.lastupdated < '${endDate}');""",
                 Map.of(
-                    "tableName", sqlBuilder.qualifyTable(table.getMainName()),
+                    "tableName", sqlBuilder.quote(table.getMainName()),
                     "programId", String.valueOf(program.getId()),
                     "startDate", toLongDate(partition.getStartDate()),
                     "endDate", toLongDate(partition.getEndDate())));
@@ -403,7 +402,7 @@ public class JdbcEventAnalyticsTableManager extends AbstractEventJdbcTableManage
                     and ev.lastupdated >= '${startDate}' \
                     and ev.lastupdated < '${endDate}');""",
                   Map.of(
-                      "tableName", sqlBuilder.qualifyTable(table.getMainName()),
+                      "tableName", sqlBuilder.quote(table.getMainName()),
                       "programStageId", String.valueOf(programStageId),
                       "startDate", toLongDate(partition.getStartDate()),
                       "endDate", toLongDate(partition.getEndDate())));
@@ -595,7 +594,7 @@ public class JdbcEventAnalyticsTableManager extends AbstractEventJdbcTableManage
 
     return partition.isLatestPartition()
         ? latestFilter
-        : emptyIfTrue(partitionFilter, sqlBuilder.supportsDeclarativePartitioning());
+        : emptyIfTrue(partitionFilter, !sqlBuilder.restrictPopulateToPartition());
   }
 
   /**
@@ -837,17 +836,13 @@ public class JdbcEventAnalyticsTableManager extends AbstractEventJdbcTableManage
       return getLegendCaseColumns(dataElement, selectExpression);
     }
 
-    String eventTable =
-        sqlBuilder.qualifyTable(
-            programType == WITHOUT_REGISTRATION ? "singleevent" : "trackerevent");
-
     String query =
         """
         (select l.uid from ${maplegend} l \
-        inner join ${eventTable} on l.startvalue <= ${select} \
+        where l.maplegendsetid=${legendSetId} \
+        and l.startvalue <= ${select} \
         and l.endvalue > ${select} \
-        and l.maplegendsetid=${legendSetId} \
-        ${dataClause} where eventid = ev.eventid) as ${column}""";
+        ${dataClause}) as ${column}""";
 
     return dataElement.getLegendSets().stream()
         .map(
@@ -865,9 +860,7 @@ public class JdbcEventAnalyticsTableManager extends AbstractEventJdbcTableManage
                           "dataClause",
                           dataFilterClause,
                           "column",
-                          column,
-                          "eventTable",
-                          eventTable));
+                          column));
 
               return AnalyticsTableColumn.builder()
                   .name(column)

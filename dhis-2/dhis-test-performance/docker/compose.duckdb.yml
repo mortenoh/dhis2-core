@@ -1,0 +1,28 @@
+# Compose override for DuckDB analytics runs, paired with dhis-duckdb.conf.
+# Its PostgreSQL counterpart is compose.pg-baseline.yml - keep the memory
+# settings identical in both, or the two runs are not comparable.
+#
+# HOME: the image runs as uid 65534 with no HOME, and DuckDB downloads the
+# `postgres` extension to ~/.duckdb on first use. /opt/dhis2 is the one
+# directory the jib image makes writable for that uid.
+#
+# Memory: DuckDB runs inside this container and caps itself at
+# (container limit - JVM max heap) * 0.75. The stock 16g/10g split leaves it
+# 4.3 GiB, which the parallel analytics export exhausts on Sierra Leone
+# (Out of Memory Error, whole export aborts). An 11g container with a 3g heap
+# gives the engine ~6 GiB while keeping total container memory below the
+# PostgreSQL baseline's, so DuckDB is not being handed extra resources.
+#
+# WEB_MEM / WEB_HEAP override the container limit and JVM heap (defaults 11gb / 3000m).
+#
+# Usage: WEB_MEM=20gb WEB_HEAP=4000 COMPOSE_EXTRA_FILE=docker/compose.duckdb.yml \
+#        DHIS_CONF_FILE=dhis-duckdb.conf ./run-simulation.sh
+services:
+  web:
+    mem_limit: ${WEB_MEM:-11gb}
+    environment:
+      HOME: /opt/dhis2
+      JAVA_TOOL_OPTIONS:
+        "-Dlog4j2.configurationFile=/opt/dhis2/log4j2.xml \
+        -Xmx${WEB_HEAP:-3000}m -Xms${WEB_HEAP:-3000}m \
+        -Xlog:async -Xlog:gc*,safepoint:file=/tmp/gc.log:time,uptime,level,tags"

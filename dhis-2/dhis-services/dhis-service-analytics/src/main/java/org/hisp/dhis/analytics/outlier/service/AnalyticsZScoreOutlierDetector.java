@@ -65,6 +65,9 @@ import org.springframework.stereotype.Repository;
 @Repository
 @RequiredArgsConstructor
 public class AnalyticsZScoreOutlierDetector {
+  // Must target the analytics database — the unqualified default template points at the
+  // transaction database, which only coincides with the analytics tables on PostgreSQL
+  @Qualifier("analyticsNamedParameterJdbcTemplate")
   private final NamedParameterJdbcTemplate jdbcTemplate;
 
   @Qualifier("analyticsZScoreSqlStatementProcessor")

@@ -88,6 +88,7 @@ public class AnalyticsDatabaseInit {
       case POSTGRESQL -> initPostgreSql();
       case DORIS -> initDoris();
       case CLICKHOUSE -> initClickHouse();
+      case DUCKDB -> initDuckDb();
     }
 
     String url = settings.getAnalyticsConnectionUrl();
@@ -108,6 +109,27 @@ public class AnalyticsDatabaseInit {
   /** Work for initializing a ClickHouse analytics database. */
   private void initClickHouse() {
     createClickHouseNamedCollection();
+  }
+
+  /**
+   * DuckDB needs no one-shot bootstrap here. Its session state — the {@code postgres} extension,
+   * the read-only {@code pg} ATTACH, and the {@code memory_limit} / {@code temp_directory} / {@code
+   * preserve_insertion_order} settings — is connection/instance state, not persisted to the {@code
+   * .duckdb} file. It is therefore established on <b>every</b> physical pool connection via a
+   * per-connection initializer (built in {@code
+   * AnalyticsDataSourceConfig#buildDuckDbConnectionInitSql} and assembled by {@link
+   * org.hisp.dhis.db.sql.DuckDbSqlBuilder#connectionInitSql}). Running it once here would only
+   * initialize a single pooled connection, leaving others to fail with "schema pg does not exist".
+   *
+   * <p>The probe below forces one pooled connection through that initializer so failures surface at
+   * startup with a clear cause instead of at the first analytics export. The most common failure is
+   * the {@code install postgres} step: the {@code postgres} extension is not bundled with the JDBC
+   * driver and is downloaded from the DuckDB extension repository on first use, which requires
+   * outbound network access and a writable extension directory (default {@code ~/.duckdb}).
+   * Pre-install the extension for air-gapped deployments.
+   */
+  private void initDuckDb() {
+    jdbcTemplate.execute("select 1");
   }
 
   /**

@@ -36,6 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.Map;
 import org.apache.commons.text.StringSubstitutor;
+import org.hisp.dhis.db.sql.PostgreSqlBuilder;
 import org.hisp.dhis.program.AnalyticsType;
 import org.hisp.dhis.relationship.RelationshipEntity;
 import org.hisp.dhis.relationship.RelationshipType;
@@ -50,29 +51,30 @@ class RelationshipTypeJoinGeneratorTest {
   private static final String ALIAS = "subax";
 
   private static final String RELATIONSHIP_JOIN =
-      " left join relationship r on r.from_relationshipitemid = ri.relationshipitemid "
-          + "left join relationshipitem ri2 on r.to_relationshipitemid = ri2.relationshipitemid "
-          + "left join relationshiptype rty on rty.relationshiptypeid = r.relationshiptypeid ";
+      " left join \"relationship\" r on r.from_relationshipitemid = ri.relationshipitemid "
+          + "left join \"relationshipitem\" ri2 on r.to_relationshipitemid = ri2.relationshipitemid "
+          + "left join \"relationshiptype\" rty on rty.relationshiptypeid = r.relationshiptypeid ";
 
   private static final String TRACKED_ENTITY_JOIN_START =
       ALIAS
-          + ".trackedentity in (select te.uid from trackedentity te left join relationshipitem ri on te.trackedentityid = ri.trackedentityid ";
+          + ".trackedentity in (select te.uid from \"trackedentity\" te left join \"relationshipitem\" ri on te.trackedentityid = ri.trackedentityid ";
 
   private static final String ENROLLMENT_JOIN_START =
       ALIAS
-          + ".enrollment in (select en.uid from enrollment en left join relationshipitem ri on en.enrollmentid = ri.enrollmentid ";
+          + ".enrollment in (select en.uid from \"enrollment\" en left join \"relationshipitem\" ri on en.enrollmentid = ri.enrollmentid ";
 
   private static final String EVENT_JOIN_START =
       ALIAS
-          + ".event in (select ev.uid from event ev left join relationshipitem ri on ev.eventid = ri.eventid ";
+          + ".event in (select ev.uid from \"event\" ev left join \"relationshipitem\" ri on ev.eventid = ri.eventid ";
 
   private static final String TRACKED_ENTITY_RELTO_JOIN =
-      "left join trackedentity te2 on te2.trackedentityid = ri2.trackedentityid";
+      "left join \"trackedentity\" te2 on te2.trackedentityid = ri2.trackedentityid";
 
   private static final String ENROLLMENT_RELTO_JOIN =
-      "left join enrollment en2 on en2.enrollmentid = ri2.enrollmentid";
+      "left join \"enrollment\" en2 on en2.enrollmentid = ri2.enrollmentid";
 
-  private static final String EVENT_RELTO_JOIN = "left join event ev2 on ev2.eventid = ri2.eventid";
+  private static final String EVENT_RELTO_JOIN =
+      "left join \"event\" ev2 on ev2.eventid = ri2.eventid";
 
   private final BeanRandomizer rnd = BeanRandomizer.create();
 
@@ -187,7 +189,10 @@ class RelationshipTypeJoinGeneratorTest {
                 ? " and en2.uid = ax.enrollment )"
                 : " and ev2.uid = ax.event )"));
 
-    assertEquals(expected, RelationshipTypeJoinGenerator.generate(ALIAS, relationshipType, type));
+    assertEquals(
+        expected,
+        RelationshipTypeJoinGenerator.generate(
+            ALIAS, relationshipType, type, new PostgreSqlBuilder()));
   }
 
   private static String getFromRelationshipEntity(

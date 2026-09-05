@@ -89,6 +89,22 @@ public class AnalyticsTablePartition extends Table {
    * @param table the master {@link AnalyticsTable} of this partition.
    */
   public AnalyticsTablePartition(AnalyticsTable table) {
+    this(table, null, null, null);
+  }
+
+  /**
+   * Constructor. Sets the name to represent a staging table partition, carrying the given partition
+   * window. Used for databases with declarative partitioning, where the master staging table is
+   * populated directly (no physical partition tables) but the populate SQL must still be restricted
+   * to the partition window — critical for "latest" partial updates, whose window filter otherwise
+   * disappears and silently degrades the update to a full re-population.
+   *
+   * @param table the master {@link AnalyticsTable} of this partition.
+   * @param year the year which represents this partition, or null.
+   * @param startDate the start date of data for this partition, or null.
+   * @param endDate the end date of data for this partition, or null.
+   */
+  public AnalyticsTablePartition(AnalyticsTable table, Integer year, Date startDate, Date endDate) {
     super(
         toStaging(getTableName(table.getMainName(), null)),
         List.of(),
@@ -97,9 +113,9 @@ public class AnalyticsTablePartition extends Table {
         table.getLogged(),
         table);
     this.masterTable = table;
-    this.year = null;
-    this.startDate = null;
-    this.endDate = null;
+    this.year = year;
+    this.startDate = startDate;
+    this.endDate = endDate;
   }
 
   // -------------------------------------------------------------------------

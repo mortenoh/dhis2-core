@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2023, University of Oslo
+ * Copyright (c) 2004-2026, University of Oslo
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -35,6 +35,8 @@ import static org.mockito.Mockito.when;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import org.hisp.dhis.db.sql.PostgreSqlBuilder;
+import org.hisp.dhis.db.sql.SqlBuilder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -50,18 +52,15 @@ import org.springframework.jdbc.core.JdbcTemplate;
 @ExtendWith(MockitoExtension.class)
 class TableInfoReaderTest {
 
-  public static final String QUERY_TABLE_COLUMN_NAMES =
-      "select column_name"
-          + " from information_schema.columns"
-          + " where table_schema = 'public'"
-          + " and table_name = ?";
+  private final SqlBuilder sqlBuilder = new PostgreSqlBuilder();
+
   @Mock private JdbcTemplate jdbcTemplate;
 
   private TableInfoReader tableInfoReader;
 
   @BeforeEach
   public void beforeAll() {
-    tableInfoReader = new TableInfoReader(jdbcTemplate);
+    tableInfoReader = new TableInfoReader(jdbcTemplate, sqlBuilder);
   }
 
   @Test
@@ -71,7 +70,7 @@ class TableInfoReaderTest {
     List<String> columns = List.of("col1", "col2");
 
     // When
-    when(jdbcTemplate.queryForList(QUERY_TABLE_COLUMN_NAMES, String.class, tableName))
+    when(jdbcTemplate.queryForList(sqlBuilder.tableColumns(tableName), String.class))
         .thenReturn(columns);
     Set<String> absentColumns =
         tableInfoReader.checkColumnsPresence(tableName, new HashSet<>(columns));
@@ -86,14 +85,10 @@ class TableInfoReaderTest {
     String tableName = "tableName";
     List<String> columns = List.of("col1", "col2");
     Set<String> hasMissing = Set.of("col1", "col3");
-    String sql =
-        "select column_name"
-            + " from information_schema.columns"
-            + " where table_schema = 'public'"
-            + " and table_name = ?";
 
     // When
-    when(jdbcTemplate.queryForList(sql, String.class, tableName)).thenReturn(columns);
+    when(jdbcTemplate.queryForList(sqlBuilder.tableColumns(tableName), String.class))
+        .thenReturn(columns);
     Set<String> absentColumns = tableInfoReader.checkColumnsPresence(tableName, hasMissing);
 
     // Then

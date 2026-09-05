@@ -148,6 +148,15 @@ public abstract class AbstractSqlBuilder implements SqlBuilder {
   }
 
   @Override
+  public String tableColumns(String name) {
+    return String.format(
+        """
+        select c.column_name from information_schema.columns c \
+        where c.table_schema = 'public' and c.table_name = %s;""",
+        singleQuote(name));
+  }
+
+  @Override
   public String countRows(Table table) {
     return String.format("select count(*) as row_count from %s;", quote(table.getName()));
   }
